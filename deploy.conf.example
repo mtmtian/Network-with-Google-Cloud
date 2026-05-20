@@ -1,0 +1,24 @@
+# ── 复制本文件为 deploy.conf 后按需修改（deploy.sh 首次运行会自动帮你创建）──
+
+# GCP 项目 ID（必填）。留空时 deploy.sh 会用 gcloud 当前项目并提示确认
+PROJECT_ID=
+
+# 区域 / 可用区。Free Tier 免费区：us-west1 / us-central1 / us-east1
+REGION=us-west1
+ZONE=us-west1-a
+
+# 资源命名
+INSTANCE_NAME=vpn-us
+IP_NAME=vpn-us-ip
+MACHINE_TYPE=e2-micro
+NETWORK_TIER=PREMIUM
+
+# Reality 主节点端口与伪装域名（443 最隐蔽；SNI 用一个海外大站的真实域名）
+REALITY_PORT=443
+REALITY_SNI=www.microsoft.com
+
+# SS 兜底端口。留空 = 自动随机一个高位端口（写入 .secrets.env）
+SS_PORT=
+
+# 要生成客户端配置的设备名（空格分隔，可自由增删）
+DEVICES="mac iphone ipad laptop spare"
