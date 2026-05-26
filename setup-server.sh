@@ -8,11 +8,11 @@ export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
 ENV_FILE="${1:-/tmp/server-env.sh}"
 # shellcheck disable=SC1090
 . "$ENV_FILE"
-: "${SS_PORT:?}" "${SS_IPSK:?}" "${REALITY_PORT:?}" "${REALITY_SNI:?}" "${REALITY_SHORTID:?}" "${DEVICES:?}"
+: "${SS_PORT:?}" "${SS_IPSK:?}" "${REALITY_PORT:?}" "${REALITY_SNI:?}" "${REALITY_SHORTID:?}" "${DEVICES:?}" "${HY2_PORT:?}"
 
 vv() { eval "printf '%s' \"\${$1:-}\""; }   # indirect var read
 
-echo "=== [1/7] Enabling BBR ==="
+echo "=== [1/8] Enabling BBR ==="
 if ! grep -q "net.ipv4.tcp_congestion_control=bbr" /etc/sysctl.conf; then
   sudo tee -a /etc/sysctl.conf > /dev/null <<'SYSCTL'
 
@@ -24,13 +24,13 @@ fi
 sudo sysctl -p > /dev/null
 sysctl net.ipv4.tcp_congestion_control
 
-echo "=== [2/7] Installing prerequisites ==="
+echo "=== [2/8] Installing prerequisites ==="
 sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl unzip xz-utils
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl unzip xz-utils openssl
 
 ARCH="$(uname -m)"
 
-echo "=== [3/7] Installing shadowsocks-rust ==="
+echo "=== [3/8] Installing shadowsocks-rust ==="
 SS_VER="v1.22.0"
 case "$ARCH" in
   x86_64)  SS_TARGET="x86_64-unknown-linux-gnu" ;;
@@ -43,7 +43,7 @@ tar -C /tmp -xf /tmp/ss.tar.xz ssserver
 sudo install -m 0755 /tmp/ssserver /usr/local/bin/ssserver
 /usr/local/bin/ssserver --version
 
-echo "=== [4/7] Installing Xray ==="
+echo "=== [4/8] Installing Xray ==="
 case "$ARCH" in
   x86_64)  XRAY_ZIP="Xray-linux-64.zip" ;;
   aarch64) XRAY_ZIP="Xray-linux-arm64-v8a.zip" ;;
@@ -54,24 +54,37 @@ sudo unzip -oq /tmp/xray.zip -d /usr/local/bin xray
 sudo chmod 0755 /usr/local/bin/xray
 /usr/local/bin/xray version | head -1
 
-echo "=== [5/7] Generating Reality keypair ==="
+echo "=== [5/8] Installing Hysteria2 ==="
+case "$ARCH" in
+  x86_64)  HY2_BIN="hysteria-linux-amd64" ;;
+  aarch64) HY2_BIN="hysteria-linux-arm64" ;;
+esac
+curl -fsSL -o /tmp/hysteria \
+  "https://github.com/apernet/hysteria/releases/latest/download/${HY2_BIN}"
+sudo install -m 0755 /tmp/hysteria /usr/local/bin/hysteria
+/usr/local/bin/hysteria version | head -1
+
+echo "=== [6/8] Generating Reality keypair ==="
 KEYS="$(/usr/local/bin/xray x25519)"
 REALITY_PRIVATE="$(echo "$KEYS" | grep -iE 'private' | awk '{print $NF}')"
 REALITY_PUBLIC="$(echo "$KEYS"  | grep -iE 'public|password' | awk '{print $NF}')"
 [ -n "$REALITY_PRIVATE" ] && [ -n "$REALITY_PUBLIC" ] || { echo "x25519 keygen failed"; exit 1; }
 
-echo "=== [6/7] Writing server configs ==="
-# --- shadowsocks users array ---
-ss_users=""; xray_clients=""; first=1
+echo "=== [7/8] Writing server configs ==="
+# --- shadowsocks users + xray clients + hysteria2 userpass ---
+ss_users=""; xray_clients=""; hy2_users=""; first=1
 for d in $DEVICES; do
   upsk="$(vv "SS_UPSK_$d")"
   uuid="$(vv "REALITY_UUID_$d")"
-  [ -n "$upsk" ] && [ -n "$uuid" ] || { echo "missing creds for device $d"; exit 1; }
+  hy2pw="$(vv "HY2_PASS_$d")"
+  [ -n "$upsk" ] && [ -n "$uuid" ] && [ -n "$hy2pw" ] || { echo "missing creds for device $d"; exit 1; }
   sep=","; [ $first -eq 1 ] && sep=""
   ss_users="${ss_users}${sep}
     {\"name\": \"$d\", \"password\": \"$upsk\"}"
   xray_clients="${xray_clients}${sep}
         {\"id\": \"$uuid\", \"flow\": \"xtls-rprx-vision\"}"
+  hy2_users="${hy2_users}
+    ${d}: ${hy2pw}"
   first=0
 done
 
@@ -123,6 +136,36 @@ sudo tee /usr/local/etc/xray/config.json > /dev/null <<JSON
 JSON
 sudo chmod 644 /usr/local/etc/xray/config.json
 
+# --- hysteria2 config + self-signed cert ---
+sudo mkdir -p /etc/hysteria
+if [ ! -f /etc/hysteria/cert.crt ] || [ ! -f /etc/hysteria/cert.key ]; then
+  sudo openssl ecparam -genkey -name prime256v1 -out /tmp/hy2.key >/dev/null 2>&1
+  sudo openssl req -new -x509 -days 3650 -key /tmp/hy2.key \
+    -out /etc/hysteria/cert.crt -subj "/CN=www.bing.com" >/dev/null 2>&1
+  sudo mv /tmp/hy2.key /etc/hysteria/cert.key
+fi
+sudo chmod 644 /etc/hysteria/cert.crt
+sudo chmod 644 /etc/hysteria/cert.key
+
+sudo tee /etc/hysteria/config.yaml > /dev/null <<YAML
+listen: :${HY2_PORT}
+
+tls:
+  cert: /etc/hysteria/cert.crt
+  key: /etc/hysteria/cert.key
+
+auth:
+  type: userpass
+  userpass:${hy2_users}
+
+masquerade:
+  type: proxy
+  proxy:
+    url: https://www.bing.com
+    rewriteHost: true
+YAML
+sudo chmod 644 /etc/hysteria/config.yaml
+
 # --- systemd units ---
 sudo tee /etc/systemd/system/ssserver.service > /dev/null <<'UNIT'
 [Unit]
@@ -172,13 +215,38 @@ DynamicUser=true
 WantedBy=multi-user.target
 UNIT
 
-sudo systemctl daemon-reload
-sudo systemctl enable ssserver xray
-sudo systemctl restart ssserver xray
-sleep 2
-sudo systemctl is-active ssserver xray || true
+sudo tee /etc/systemd/system/hysteria.service > /dev/null <<'UNIT'
+[Unit]
+Description=Hysteria2 server
+After=network-online.target
+Wants=network-online.target
 
-echo "=== [7/7] Hardening (SSH + auto-updates) ==="
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/hysteria server -c /etc/hysteria/config.yaml
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=1048576
+NoNewPrivileges=true
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadOnlyPaths=/etc/hysteria
+DynamicUser=true
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+sudo systemctl daemon-reload
+sudo systemctl enable ssserver xray hysteria
+sudo systemctl restart ssserver xray hysteria
+sleep 2
+sudo systemctl is-active ssserver xray hysteria || true
+
+echo "=== [8/8] Hardening (SSH + auto-updates) ==="
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq unattended-upgrades
 sudo dpkg-reconfigure -f noninteractive unattended-upgrades || true
 sudo sed -i \
@@ -190,7 +258,7 @@ sudo systemctl reload ssh || sudo systemctl reload sshd || true
 
 echo ""
 echo "=== Listening sockets ==="
-sudo ss -tulnp | grep -E 'ssserver|xray' || true
+sudo ss -tulnp | grep -E 'ssserver|xray|hysteria' || true
 
 # machine-readable handoff line — local deployer greps this
 echo ""

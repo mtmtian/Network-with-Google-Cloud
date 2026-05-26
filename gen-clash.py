@@ -36,6 +36,7 @@ env.update(load_kv(HERE / ".secrets.env"))
 REQUIRED = [
     "STATIC_IP", "SS_PORT", "SS_IPSK",
     "REALITY_PORT", "REALITY_SNI", "REALITY_PUBLIC", "REALITY_SHORTID",
+    "HY2_PORT",
 ]
 missing = [k for k in REQUIRED if not env.get(k)]
 if missing:
@@ -44,7 +45,7 @@ if missing:
 devices = env.get("DEVICES", "mac iphone ipad laptop spare").split()
 
 TEMPLATE = """# Clash.Meta / Mihomo config — device: {DEVICE}
-# Server: {STATIC_IP}  |  primary: VLESS+Reality:{REALITY_PORT}  |  fallback: SS-2022:{SS_PORT}
+# Server: {STATIC_IP}  |  primary: VLESS+Reality:{REALITY_PORT}  |  fallback: Hysteria2:{HY2_PORT}/udp, SS-2022:{SS_PORT}
 
 mixed-port: 7890
 allow-lan: false
@@ -92,6 +93,16 @@ proxies:
       public-key: {REALITY_PUBLIC}
       short-id: "{REALITY_SHORTID}"
 
+  - name: "US-HY2"
+    type: hysteria2
+    server: {STATIC_IP}
+    port: {HY2_PORT}
+    password: "{HY2_PASSWORD}"
+    sni: www.bing.com
+    skip-cert-verify: true
+    alpn:
+      - h3
+
   - name: "US-SS"
     type: ss
     server: {STATIC_IP}
@@ -107,6 +118,7 @@ proxy-groups:
     proxies:
       - "⚡ Auto"
       - "US-Reality"
+      - "US-HY2"
       - "US-SS"
       - DIRECT
 
@@ -117,6 +129,7 @@ proxy-groups:
     tolerance: 50
     proxies:
       - "US-Reality"
+      - "US-HY2"
       - "US-SS"
 
   - name: "🤖 AI"
@@ -124,6 +137,7 @@ proxy-groups:
     proxies:
       - "⚡ Auto"
       - "US-Reality"
+      - "US-HY2"
       - "US-SS"
       - "🚀 Proxy"
       - DIRECT
@@ -250,12 +264,14 @@ OUT_DIR.mkdir(exist_ok=True)
 for dev in devices:
     upsk = env.get(f"SS_UPSK_{dev}")
     uuid = env.get(f"REALITY_UUID_{dev}")
-    if not upsk or not uuid:
-        sys.exit(f"ERROR: 设备 {dev} 缺少 SS_UPSK_{dev} 或 REALITY_UUID_{dev}")
+    hy2pw = env.get(f"HY2_PASS_{dev}")
+    if not upsk or not uuid or not hy2pw:
+        sys.exit(f"ERROR: 设备 {dev} 缺少 SS_UPSK_{dev} / REALITY_UUID_{dev} / HY2_PASS_{dev}")
     yaml = TEMPLATE.format(
         DEVICE=dev,
         DEV_UUID=uuid,
         SS_PASSWORD=f"{env['SS_IPSK']}:{upsk}",
+        HY2_PASSWORD=hy2pw,
         **env,
     )
     path = OUT_DIR / f"{dev}.yaml"

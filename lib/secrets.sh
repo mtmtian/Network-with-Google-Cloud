@@ -27,14 +27,25 @@ if [ -z "${SS_PORT:-}" ]; then
   ensure_secret SS_PORT "$port"
 fi
 
+# Hysteria2 端口：UDP，随机高位（独立于 SS 端口范围，避免冲突）
+if [ -z "${HY2_PORT:-}" ]; then
+  if command -v shuf >/dev/null 2>&1; then
+    hy2p="$(shuf -i 30000-39999 -n1)"
+  else
+    hy2p="$(python3 -c 'import random; print(random.randint(30000,39999))')"
+  fi
+  ensure_secret HY2_PORT "$hy2p"
+fi
+
 # 服务器主密钥(iPSK) + Reality short-id（全设备共用）
 ensure_secret SS_IPSK        "$(rand_psk)"
 ensure_secret REALITY_SHORTID "$(rand_short)"
 
-# 每设备独立 uPSK 与 Reality UUID（可单独作废）
+# 每设备独立 uPSK / Reality UUID / Hysteria2 密码（可单独作废）
 for d in ${DEVICES:-mac iphone ipad laptop spare}; do
   ensure_secret "SS_UPSK_$d"      "$(rand_psk)"
   ensure_secret "REALITY_UUID_$d" "$(gen_uuid)"
+  ensure_secret "HY2_PASS_$d"     "$(rand_psk)"
 done
 
 ok "密钥就绪（已写入 .secrets.env）"
