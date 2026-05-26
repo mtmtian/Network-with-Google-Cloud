@@ -173,8 +173,8 @@ WantedBy=multi-user.target
 UNIT
 
 sudo systemctl daemon-reload
-sudo systemctl enable --now ssserver
-sudo systemctl enable --now xray
+sudo systemctl enable ssserver xray
+sudo systemctl restart ssserver xray
 sleep 2
 sudo systemctl is-active ssserver xray || true
 
