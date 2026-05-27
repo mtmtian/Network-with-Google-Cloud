@@ -68,8 +68,16 @@ sudo install -m 0755 /tmp/anytls-extract/anytls-server /usr/local/bin/anytls-ser
 echo "anytls-server v${AT_VER} installed"
 
 echo "=== [6/8] Generating Reality keypair ==="
-KEYS="$(/usr/local/bin/xray x25519)"
-REALITY_PRIVATE="$(echo "$KEYS" | grep -iE 'private' | awk '{print $NF}')"
+REALITY_PRIVATE=""
+if [ -f /usr/local/etc/xray/config.json ]; then
+  REALITY_PRIVATE="$(sudo awk -F'"' '/"privateKey"/ {print $4; exit}' /usr/local/etc/xray/config.json)"
+fi
+if [ -n "$REALITY_PRIVATE" ]; then
+  KEYS="$(/usr/local/bin/xray x25519 -i "$REALITY_PRIVATE")"
+else
+  KEYS="$(/usr/local/bin/xray x25519)"
+  REALITY_PRIVATE="$(echo "$KEYS" | grep -iE 'private' | awk '{print $NF}')"
+fi
 REALITY_PUBLIC="$(echo "$KEYS"  | grep -iE 'public|password' | awk '{print $NF}')"
 [ -n "$REALITY_PRIVATE" ] && [ -n "$REALITY_PUBLIC" ] || { echo "x25519 keygen failed"; exit 1; }
 
