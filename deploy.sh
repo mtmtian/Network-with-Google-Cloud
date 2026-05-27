@@ -50,12 +50,12 @@ srv_env="$tmpd/server-env.sh"
   for k in REALITY_PORT REALITY_SNI DEVICES; do
     printf "export %s='%s'\n" "$k" "$(varval "$k")"
   done
-  for k in SS_PORT SS_IPSK REALITY_SHORTID; do
+  for k in REALITY_SHORTID HY2_PORT ANYTLS_PORT ANYTLS_PASS; do
     printf "export %s='%s'\n" "$k" "$(secret_get "$k")"
   done
   for d in $DEVICES; do
-    printf "export SS_UPSK_%s='%s'\n" "$d" "$(secret_get "SS_UPSK_$d")"
     printf "export REALITY_UUID_%s='%s'\n" "$d" "$(secret_get "REALITY_UUID_$d")"
+    printf "export HY2_PASS_%s='%s'\n" "$d" "$(secret_get "HY2_PASS_$d")"
   done
 } > "$srv_env"
 
@@ -88,8 +88,9 @@ load_secrets
 printf '\n\033[1;32m=== 部署完成 ===\033[0m\n'
 echo "  服务器 IP : $STATIC_IP"
 echo "  Reality   : 端口 $REALITY_PORT  SNI $REALITY_SNI"
-echo "  SS 兜底   : 端口 $SS_PORT"
+echo "  Hysteria2 : 端口 $HY2_PORT (UDP)"
+echo "  AnyTLS    : 端口 $ANYTLS_PORT (TCP)"
 echo "  配置文件  : $KIT_DIR/clash-configs/*.yaml"
 echo ""
 echo "导入 Clash Verge：设置 → 配置 → 导入 → 选择 clash-configs/ 下对应设备的 .yaml"
-echo "（手机用 Stash / ClashX：把对应 yaml 传过去导入即可）"
+echo "手机端请使用支持 Reality / Hysteria2 / AnyTLS 的 Mihomo / Clash.Meta 兼容客户端，再导入对应 yaml"

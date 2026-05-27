@@ -17,8 +17,9 @@ NETWORK_TIER=PREMIUM
 REALITY_PORT=443
 REALITY_SNI=www.microsoft.com
 
-# SS 兜底端口。留空 = 自动随机一个高位端口（写入 .secrets.env）
-SS_PORT=
+# Hysteria2 / AnyTLS 兜底端口。留空 = 自动随机高位端口（写入 .secrets.env）
+HY2_PORT=
+ANYTLS_PORT=
 
 # 要生成客户端配置的设备名（空格分隔，可自由增删）
 DEVICES="mac iphone ipad laptop spare"

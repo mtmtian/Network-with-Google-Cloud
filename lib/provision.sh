@@ -8,45 +8,65 @@ load_secrets
 : "${PROJECT_ID:?deploy.conf 缺少 PROJECT_ID}"
 : "${REGION:?}" "${ZONE:?}" "${INSTANCE_NAME:?}" "${IP_NAME:?}"
 : "${MACHINE_TYPE:=e2-micro}" "${NETWORK_TIER:=PREMIUM}"
-: "${REALITY_PORT:=443}" "${SS_PORT:?SS_PORT 未生成，请先运行 secrets.sh}"
+: "${REALITY_PORT:=443}"
+: "${HY2_PORT:?HY2_PORT 未生成，请先运行 secrets.sh}"
+: "${ANYTLS_PORT:?ANYTLS_PORT 未生成，请先运行 secrets.sh}"
 
 GC=(gcloud --project "$PROJECT_ID" --quiet)
 
-say "[1/4] 启用 Compute Engine API（幂等）"
-"${GC[@]}" services enable compute.googleapis.com
+gcloud_retry() {
+  local attempt status delay
+  delay=3
+  for attempt in 1 2 3; do
+    if "${GC[@]}" "$@"; then
+      return 0
+    fi
+    status=$?
+    if [ "$attempt" -lt 3 ]; then
+      warn "gcloud 请求失败，${delay}s 后重试 (${attempt}/3)..."
+      sleep "$delay"
+      delay=$((delay * 2))
+    fi
+  done
+  return "$status"
+}
 
-say "[2/4] 预留静态外部 IP：$IP_NAME（$REGION / $NETWORK_TIER）"
-if "${GC[@]}" compute addresses describe "$IP_NAME" --region "$REGION" >/dev/null 2>&1; then
+say "[1/4] 启用 Compute Engine API（幂等）"
+gcloud_retry services enable compute.googleapis.com
+
+say "[2/4] 预留静态外部 IP：${IP_NAME}（${REGION} / ${NETWORK_TIER}）"
+if gcloud_retry compute addresses describe "$IP_NAME" --region "$REGION" >/dev/null 2>&1; then
   ok "IP 已存在，复用"
 else
-  "${GC[@]}" compute addresses create "$IP_NAME" --region "$REGION" --network-tier "$NETWORK_TIER"
+  gcloud_retry compute addresses create "$IP_NAME" --region "$REGION" --network-tier "$NETWORK_TIER"
 fi
-STATIC_IP="$("${GC[@]}" compute addresses describe "$IP_NAME" --region "$REGION" --format='value(address)')"
+STATIC_IP="$(gcloud_retry compute addresses describe "$IP_NAME" --region "$REGION" --format='value(address)')"
 setkv STATIC_IP "$STATIC_IP"
 ok "静态 IP：$STATIC_IP"
 
 say "[3/4] 防火墙规则（幂等）"
-if "${GC[@]}" compute firewall-rules describe allow-proxy >/dev/null 2>&1; then
-  "${GC[@]}" compute firewall-rules update allow-proxy \
-    --rules "tcp:${SS_PORT},udp:${SS_PORT},tcp:${REALITY_PORT}"
+FW_RULES="tcp:${REALITY_PORT},udp:${HY2_PORT},tcp:${ANYTLS_PORT}"
+if gcloud_retry compute firewall-rules describe allow-proxy >/dev/null 2>&1; then
+  gcloud_retry compute firewall-rules update allow-proxy \
+    --rules "$FW_RULES"
 else
-  "${GC[@]}" compute firewall-rules create allow-proxy \
+  gcloud_retry compute firewall-rules create allow-proxy \
     --network default --direction INGRESS --action ALLOW \
-    --rules "tcp:${SS_PORT},udp:${SS_PORT},tcp:${REALITY_PORT}" \
+    --rules "$FW_RULES" \
     --source-ranges 0.0.0.0/0 --target-tags vpn-node
 fi
-if ! "${GC[@]}" compute firewall-rules describe allow-iap-ssh >/dev/null 2>&1; then
-  "${GC[@]}" compute firewall-rules create allow-iap-ssh \
+if ! gcloud_retry compute firewall-rules describe allow-iap-ssh >/dev/null 2>&1; then
+  gcloud_retry compute firewall-rules create allow-iap-ssh \
     --network default --direction INGRESS --action ALLOW \
     --rules tcp:22 --source-ranges 35.235.240.0/20
 fi
 ok "防火墙就绪（代理端口对公网、SSH 仅 IAP）"
 
-say "[4/4] 创建 VM：$INSTANCE_NAME（$MACHINE_TYPE / Debian 12 / $ZONE）"
-if "${GC[@]}" compute instances describe "$INSTANCE_NAME" --zone "$ZONE" >/dev/null 2>&1; then
+say "[4/4] 创建 VM：${INSTANCE_NAME}（${MACHINE_TYPE} / Debian 12 / ${ZONE}）"
+if gcloud_retry compute instances describe "$INSTANCE_NAME" --zone "$ZONE" >/dev/null 2>&1; then
   ok "VM 已存在，跳过创建"
 else
-  "${GC[@]}" compute instances create "$INSTANCE_NAME" \
+  gcloud_retry compute instances create "$INSTANCE_NAME" \
     --zone "$ZONE" \
     --machine-type "$MACHINE_TYPE" \
     --image-family debian-12 --image-project debian-cloud \

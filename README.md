@@ -6,7 +6,7 @@ One command to spin up your own US proxy node on **your own GCP account**, auto-
 
 **Language / 语言:** [English](#english) · [中文](#中文)
 
-- **Protocols / 协议**: VLESS + Reality (primary, censorship-resistant) + Shadowsocks-2022 (fallback). Clash auto-selects the faster one.
+- **Protocols / 协议**: VLESS + Reality (primary) + Hysteria2 (UDP fallback) + AnyTLS (TCP fallback). Reality is used by default.
 - **Machine / 机型**: `e2-micro` — covered by GCP Free Tier for 24/7 running; you only pay for egress traffic.
 - **Multi-device / 多设备**: every device gets its own keys, so a leaked device can be revoked alone.
 
@@ -20,9 +20,9 @@ One command to spin up your own US proxy node on **your own GCP account**, auto-
 Running `./deploy.sh` once will, end to end:
 
 1. **Preflight** — check that `gcloud` / `python3` / `openssl` are installed and you are logged in.
-2. **Generate keys locally** — Shadowsocks master/per-device keys, Reality UUIDs, short-id.
+2. **Generate keys locally** — Reality UUIDs, Hysteria2 per-device passwords, AnyTLS password, short-id.
 3. **Provision GCP** (idempotent) — reserve a static IP → firewall rules → create the `e2-micro` VM.
-4. **Install the server** over IAP SSH — BBR + shadowsocks-rust + Xray (VLESS+Reality) + systemd + SSH hardening.
+4. **Install the server** over IAP SSH — BBR + Xray (VLESS+Reality) + Hysteria2 + AnyTLS + systemd + SSH hardening.
 5. **Generate configs** — one `clash-configs/<device>.yaml` per device.
 
 Re-running is safe: existing cloud resources are reused, only the configs are refreshed.
@@ -53,7 +53,7 @@ On first run it asks a few questions (project ID / region / device list), then d
 ## 4. Import into Clash Verge
 
 - **Desktop Clash Verge**: Settings → Profiles → Import → pick the `.yaml` for your device under `clash-configs/`.
-- **Phone (Stash / ClashX etc.)**: transfer the matching `.yaml` to the device and import it.
+- **Phone**: use a Mihomo / Clash.Meta compatible client with Reality, Hysteria2, and AnyTLS support, then import the matching `.yaml`.
 
 Each device uses its own file — same server / port, but independent keys.
 
@@ -68,7 +68,8 @@ Each device uses its own file — same server / port, but independent keys.
 | `MACHINE_TYPE` | `e2-micro` | Free Tier machine type |
 | `NETWORK_TIER` | `PREMIUM` | Google backbone (more stable trans-Pacific); switch to `STANDARD` to save on heavy traffic |
 | `REALITY_PORT` / `REALITY_SNI` | `443` / `www.microsoft.com` | Reality port and camouflage domain |
-| `SS_PORT` | random | Leave blank to auto-pick a random high port |
+| `HY2_PORT` | random | Hysteria2 UDP fallback port; leave blank to auto-pick a random high port |
+| `ANYTLS_PORT` | random | AnyTLS TCP fallback port; leave blank to auto-pick a random high port |
 | `DEVICES` | `mac iphone ipad laptop spare` | Device names to generate configs for; add/remove freely |
 
 ## 6. Add / revoke devices
@@ -119,9 +120,9 @@ gcloud compute firewall-rules delete allow-proxy allow-iap-ssh
 运行一次 `./deploy.sh`，端到端完成：
 
 1. **预检** —— 检查 `gcloud` / `python3` / `openssl` 是否安装、是否已登录。
-2. **本地生成密钥** —— Shadowsocks 主/各设备子密钥、Reality UUID、short-id。
+2. **本地生成密钥** —— Reality UUID、Hysteria2 每设备密码、AnyTLS 密码、short-id。
 3. **开通 GCP 资源**（幂等）—— 预留静态 IP → 防火墙规则 → 创建 `e2-micro` VM。
-4. **远程安装服务端**（经 IAP SSH）—— BBR + shadowsocks-rust + Xray（VLESS+Reality）+ systemd + SSH 加固。
+4. **远程安装服务端**（经 IAP SSH）—— BBR + Xray（VLESS+Reality）+ Hysteria2 + AnyTLS + systemd + SSH 加固。
 5. **生成配置** —— 每台设备一份 `clash-configs/<设备>.yaml`。
 
 重复运行安全：已存在的云资源会复用，只刷新配置。
@@ -152,7 +153,7 @@ cd Network-with-Google-Cloud
 ## 四、导入 Clash Verge
 
 - **桌面 Clash Verge**：设置 → 配置 → 导入 → 选 `clash-configs/` 里对应设备的 `.yaml`。
-- **手机（Stash / ClashX 等）**：把对应 `.yaml` 传到设备导入即可。
+- **手机**：使用支持 Reality、Hysteria2、AnyTLS 的 Mihomo / Clash.Meta 兼容客户端，再导入对应 `.yaml`。
 
 每台设备用各自的文件——server / 端口相同，但密钥独立。
 
@@ -167,7 +168,8 @@ cd Network-with-Google-Cloud
 | `MACHINE_TYPE` | `e2-micro` | Free Tier 机型 |
 | `NETWORK_TIER` | `PREMIUM` | 走 Google 骨干，跨洋更稳；流量大可改 `STANDARD` 省钱 |
 | `REALITY_PORT` / `REALITY_SNI` | `443` / `www.microsoft.com` | Reality 端口与伪装域名 |
-| `SS_PORT` | 随机 | 留空自动随机高位端口 |
+| `HY2_PORT` | 随机 | Hysteria2 UDP 兜底端口，留空自动随机高位端口 |
+| `ANYTLS_PORT` | 随机 | AnyTLS TCP 兜底端口，留空自动随机高位端口 |
 | `DEVICES` | `mac iphone ipad laptop spare` | 要生成配置的设备名，可增删 |
 
 ## 六、增删 / 作废设备
