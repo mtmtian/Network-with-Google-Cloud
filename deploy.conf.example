@@ -23,3 +23,17 @@ ANYTLS_PORT=
 
 # 要生成客户端配置的设备名（空格分隔，可自由增删）
 DEVICES="mac iphone ipad laptop spare"
+
+# ── Cloudflare CDN 套娃出口（可选）──
+# 开启后多一条出口：客户端 → Cloudflare 边缘 → Cloudflare Tunnel → cloudflared@VM
+# → xray VLESS+WS(127.0.0.1:8080) → 直出。客户端只与 Cloudflare anycast IP 通信，
+# 真实 VM IP 对线路侧不可见。false 或缺 CF_API_TOKEN 时完全跳过，不影响其它三个节点。
+CDN_ENABLE=false
+# CF 上指向本 tunnel 的子域（该域名需已托管在 Cloudflare）
+CDN_HOSTNAME=cdn2.example.com
+# 新建的独立 tunnel 名（与其它机器互不影响）
+CDN_TUNNEL_NAME=vpn-us-cdn
+# WebSocket 路径。留空 = 自动随机生成（写入 .secrets.env）
+CDN_WS_PATH=
+# 注意：CF_API_TOKEN（建隧道用）与 CF_TUNNEL_TOKEN（cloudflared 连接用）属密钥，
+# 不写在本文件，只放 .secrets.env。首次运行会提示你把 CF_API_TOKEN 写进去。

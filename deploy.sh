@@ -42,6 +42,12 @@ load_secrets
 bash "$KIT_DIR/lib/provision.sh"
 load_secrets
 
+# ── 3b. Cloudflare CDN 套娃出口（可选）──
+if [ "${CDN_ENABLE:-false}" = "true" ]; then
+  bash "$KIT_DIR/lib/cloudflare.sh"
+  load_secrets
+fi
+
 # ── 4. 安装服务端，回收 Reality 公钥 ──
 say "推送并执行服务端安装脚本（首次约 1-2 分钟）"
 tmpd="$(mktemp -d)"; trap 'rm -rf "$tmpd"' EXIT
@@ -57,6 +63,15 @@ srv_env="$tmpd/server-env.sh"
     printf "export REALITY_UUID_%s='%s'\n" "$d" "$(secret_get "REALITY_UUID_$d")"
     printf "export HY2_PASS_%s='%s'\n" "$d" "$(secret_get "HY2_PASS_$d")"
   done
+  # CDN 套娃相关（CF_TUNNEL_TOKEN 由 cloudflare.sh 生成；关闭时这些为空）
+  printf "export CDN_ENABLE='%s'\n" "${CDN_ENABLE:-false}"
+  if [ "${CDN_ENABLE:-false}" = "true" ]; then
+    printf "export CDN_WS_PATH='%s'\n" "$(secret_get CDN_WS_PATH)"
+    printf "export CF_TUNNEL_TOKEN='%s'\n" "$(secret_get CF_TUNNEL_TOKEN)"
+    for d in $DEVICES; do
+      printf "export CDN_UUID_%s='%s'\n" "$d" "$(secret_get "CDN_UUID_$d")"
+    done
+  fi
 } > "$srv_env"
 
 GC=(gcloud --project "$PROJECT_ID" --quiet)
@@ -90,6 +105,9 @@ echo "  服务器 IP : $STATIC_IP"
 echo "  Reality   : 端口 $REALITY_PORT  SNI $REALITY_SNI"
 echo "  Hysteria2 : 端口 $HY2_PORT (UDP)"
 echo "  AnyTLS    : 端口 $ANYTLS_PORT (TCP)"
+if [ "${CDN_ENABLE:-false}" = "true" ]; then
+  echo "  CDN       : VLESS+WS 经 Cloudflare（$CDN_HOSTNAME，真实 IP 隐藏）"
+fi
 echo "  配置文件  : $KIT_DIR/clash-configs/*.yaml"
 echo ""
 echo "导入 Clash Verge：设置 → 配置 → 导入 → 选择 clash-configs/ 下对应设备的 .yaml"

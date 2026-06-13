@@ -50,4 +50,25 @@ for d in ${DEVICES:-mac iphone ipad laptop spare}; do
   ensure_secret "HY2_PASS_$d"     "$(rand_psk)"
 done
 
+# ── Cloudflare CDN 套娃出口的密钥（仅 CDN_ENABLE=true 时）──
+if [ "${CDN_ENABLE:-false}" = "true" ]; then
+  # WS 路径：deploy.conf 指定则沿用，否则随机（不带前导斜杠，gen-clash 与服务端统一加）
+  if [ -n "${CDN_WS_PATH:-}" ]; then
+    setkv CDN_WS_PATH "${CDN_WS_PATH#/}"
+  else
+    ensure_secret CDN_WS_PATH "$(openssl rand -hex 12)"
+  fi
+  # 每设备独立 CDN UUID，与 Reality UUID 不同 -> 两条链路凭据隔离
+  for d in ${DEVICES:-mac iphone ipad laptop spare}; do
+    ensure_secret "CDN_UUID_$d" "$(gen_uuid)"
+  done
+  # CF_API_TOKEN 由用户提供（建隧道用），不自动生成；缺失则提示但不中断
+  if [ -z "$(secret_get CF_API_TOKEN)" ]; then
+    warn "CDN_ENABLE=true 但 .secrets.env 缺 CF_API_TOKEN。"
+    warn "请把 Cloudflare API token（权限 Account>Cloudflare Tunnel:Edit + Zone>DNS:Edit）写入："
+    warn "  echo 'CF_API_TOKEN=<your-token>' >> $SECRETS_FILE"
+    warn "否则 lib/cloudflare.sh 无法建隧道，CDN 出口会被跳过。"
+  fi
+fi
+
 ok "密钥就绪（已写入 .secrets.env）"

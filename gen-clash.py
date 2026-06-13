@@ -45,6 +45,37 @@ if missing:
 
 devices = env.get("DEVICES", "mac iphone ipad laptop spare").split()
 
+# ── CDN 套娃出口（可选）──
+# 启用条件：CDN_ENABLE=true 且 CF/WS 参数齐全。启用时把 US-CDN 作为一个普通节点
+# 加入现有节点池（节点策略 / 自动测速 / 手动选择），分流规则完全不变；
+# 关闭时所有 CDN 占位符为空，与历史行为完全一致（向后兼容）。
+CDN_HOSTNAME = env.get("CDN_HOSTNAME", "")
+CDN_WS_PATH = env.get("CDN_WS_PATH", "").lstrip("/")
+cdn_on = env.get("CDN_ENABLE", "false") == "true" and bool(CDN_HOSTNAME) and bool(CDN_WS_PATH)
+CDN_REF = '\n      - "US-CDN"' if cdn_on else ""
+
+
+def cdn_proxy_block(dev_cdn_uuid):
+    """US-CDN 节点（VLESS+WS+TLS，经 Cloudflare）。CDN 关闭时返回空串。"""
+    if not cdn_on:
+        return ""
+    return (
+        '  - name: "US-CDN"\n'
+        "    type: vless\n"
+        f"    server: {CDN_HOSTNAME}\n"
+        "    port: 443\n"
+        f"    uuid: {dev_cdn_uuid}\n"
+        "    network: ws\n"
+        "    tls: true\n"
+        "    udp: true\n"
+        f"    servername: {CDN_HOSTNAME}\n"
+        "    client-fingerprint: chrome\n"
+        "    ws-opts:\n"
+        f'      path: "/{CDN_WS_PATH}"\n'
+        "      headers:\n"
+        f"        Host: {CDN_HOSTNAME}\n"
+    )
+
 TEMPLATE = """# Clash.Meta / Mihomo config — device: {DEVICE}
 # Server: {STATIC_IP}  |  primary: VLESS+Reality:{REALITY_PORT}  |  fallback: Hysteria2:{HY2_PORT}/udp, AnyTLS:{ANYTLS_PORT}/tcp
 
@@ -148,13 +179,13 @@ proxies:
     skip-cert-verify: true
     client-fingerprint: chrome
     udp: true
-
+{CDN_PROXY}
 proxy-groups:
   - name: "🚦 节点策略"
     type: select
     proxies:
       - "⚡ 自动测速"
-      - "🔧 手动选择"
+      - "🔧 手动选择"{CDN_REF}
       - "US-Reality"
       - "US-HY2"
       - "US-AnyTLS"
@@ -166,14 +197,14 @@ proxy-groups:
     url: https://www.gstatic.com/generate_204
     interval: 600
     tolerance: 150
-    proxies:
+    proxies:{CDN_REF}
       - "US-Reality"
       - "US-HY2"
       - "US-AnyTLS"
 
   - name: "🔧 手动选择"
     type: select
-    proxies:
+    proxies:{CDN_REF}
       - "US-Reality"
       - "US-HY2"
       - "US-AnyTLS"
@@ -228,14 +259,18 @@ proxy-groups:
       - "US-AnyTLS"
 
 rule-providers:
+  # 广告/追踪域名拦截清单（借鉴 Stash：远程清单，每天自动更新；需 Mihomo/Clash.Meta）
   reject:
     type: http
     behavior: domain
-    url: https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/reject.txt
-    path: ./ruleset/loy_reject.yaml
+    url: "https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/reject.txt"
+    path: ./ruleset/reject.yaml
     interval: 86400
 
 rules:
+  # --- [P0] 规则集保活：raw 直连，确保 reject 清单能拉到/更新 ---
+  - DOMAIN-SUFFIX,raw.githubusercontent.com,↪️ 直连流量
+
   # --- Local / private networks: always DIRECT ---
   - DOMAIN-SUFFIX,lan,DIRECT
   - DOMAIN-SUFFIX,local,DIRECT
@@ -299,6 +334,26 @@ rules:
   - DOMAIN-SUFFIX,kochava.com,🌐 代理流量
   - DOMAIN-SUFFIX,branch.io,🌐 代理流量
   - DOMAIN-SUFFIX,singular.net,🌐 代理流量
+  # --- 特殊域名（借鉴 Stash）：Siri 走代理（须在 apple 直连之前）、金融、Telegram ---
+  - DOMAIN-SUFFIX,guzzoni.apple.com,🌐 代理流量
+  # iCloud 私人中继（入口 gateway + 三家出口 egress）+ 连通性探测 + 定位/AppStore。
+  # 必须排在下方 apple.com / icloud.com / mzstatic.com 的「直连」规则之前，否则被吞。
+  - DOMAIN-SUFFIX,apple-relay.apple.com,🌐 代理流量
+  - DOMAIN-SUFFIX,apple-relay.fastly-edge.com,🌐 代理流量
+  - DOMAIN-SUFFIX,apple-relay.cloudflare.com,🌐 代理流量
+  - DOMAIN-SUFFIX,gateway.icloud.com,🌐 代理流量
+  - DOMAIN-SUFFIX,cp4.cloudflare.com,🌐 代理流量
+  - DOMAIN-SUFFIX,gspe1-ssl.ls.apple.com,🌐 代理流量
+  - DOMAIN-SUFFIX,apps.mzstatic.com,🌐 代理流量
+  - DOMAIN-SUFFIX,okx.com,🌐 代理流量
+  - DOMAIN-SUFFIX,binance.com,🌐 代理流量
+  - DOMAIN-SUFFIX,bybit.com,🌐 代理流量
+  - DOMAIN-SUFFIX,gate.io,🌐 代理流量
+  - DOMAIN-SUFFIX,interactivebrokers.com,🌐 代理流量
+  - DOMAIN-SUFFIX,webull.com,🌐 代理流量
+  - DOMAIN-SUFFIX,telegram.org,🌐 代理流量
+  - DOMAIN-SUFFIX,t.me,🌐 代理流量
+  - DOMAIN-KEYWORD,telegram,🌐 代理流量
   - DOMAIN-SUFFIX,google.com,🌐 代理流量
   - DOMAIN-SUFFIX,googleapis.com,🌐 代理流量
   - DOMAIN-SUFFIX,gstatic.com,🌐 代理流量
@@ -350,15 +405,14 @@ rules:
   - DOMAIN-SUFFIX,126.com,↪️ 直连流量
   - DOMAIN-SUFFIX,douyin.com,↪️ 直连流量
   - DOMAIN-SUFFIX,xiaohongshu.com,↪️ 直连流量
-  - DOMAIN-SUFFIX,netflix.com,↪️ 直连流量
-  - DOMAIN-SUFFIX,nflxvideo.net,↪️ 直连流量
-  - DOMAIN-SUFFIX,hulu.com,↪️ 直连流量
-  - DOMAIN-SUFFIX,disneyplus.com,↪️ 直连流量
-  - DOMAIN-SUFFIX,hbomax.com,↪️ 直连流量
-  - DOMAIN-SUFFIX,max.com,↪️ 直连流量
-  - DOMAIN-SUFFIX,peacocktv.com,↪️ 直连流量
+  # 流媒体（netflix/hulu/disney+/hbomax/peacock 等）不再硬编码直连，
+  # 落到下方 MATCH→兜底→代理，与 Stash（proxy.txt 兜到代理）一致。
 
-  # --- Block after explicit allow rules ---
+  # --- Spotify 直连（借鉴 Stash）---
+  - DOMAIN-KEYWORD,spotify,↪️ 直连流量
+  - DOMAIN-SUFFIX,scdn.co,↪️ 直连流量
+
+  # --- 广告/追踪拦截（借鉴 Stash：放在精确放行之后、兜底之前，不误伤业务/归因域名）---
   - RULE-SET,reject,🛑 屏蔽流量
 
   # --- GeoIP fallback ---
@@ -375,10 +429,15 @@ for dev in devices:
     hy2pw = env.get(f"HY2_PASS_{dev}")
     if not uuid or not hy2pw:
         sys.exit(f"ERROR: 设备 {dev} 缺少 REALITY_UUID_{dev} / HY2_PASS_{dev}")
+    dev_cdn_uuid = env.get(f"CDN_UUID_{dev}", "")
+    if cdn_on and not dev_cdn_uuid:
+        sys.exit(f"ERROR: CDN_ENABLE=true 但设备 {dev} 缺少 CDN_UUID_{dev}")
     yaml = TEMPLATE.format(
         DEVICE=dev,
         DEV_UUID=uuid,
         HY2_PASSWORD=f"{dev}:{hy2pw}",
+        CDN_PROXY=cdn_proxy_block(dev_cdn_uuid),
+        CDN_REF=CDN_REF,
         **env,
     )
     path = OUT_DIR / f"{dev}.yaml"

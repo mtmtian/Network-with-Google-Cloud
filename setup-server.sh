@@ -67,6 +67,18 @@ sudo unzip -oq /tmp/anytls.zip -d /tmp/anytls-extract
 sudo install -m 0755 /tmp/anytls-extract/anytls-server /usr/local/bin/anytls-server
 echo "anytls-server v${AT_VER} installed"
 
+if [ "${CDN_ENABLE:-false}" = "true" ]; then
+  echo "=== [5b] Installing cloudflared ==="
+  case "$ARCH" in
+    x86_64)  CF_BIN="cloudflared-linux-amd64" ;;
+    aarch64) CF_BIN="cloudflared-linux-arm64" ;;
+  esac
+  curl -fsSL -o /tmp/cloudflared \
+    "https://github.com/cloudflare/cloudflared/releases/latest/download/${CF_BIN}"
+  sudo install -m 0755 /tmp/cloudflared /usr/local/bin/cloudflared
+  /usr/local/bin/cloudflared --version | head -1
+fi
+
 echo "=== [6/8] Generating Reality keypair ==="
 REALITY_PRIVATE=""
 if [ -f /usr/local/etc/xray/config.json ]; then
@@ -95,6 +107,37 @@ for d in $DEVICES; do
   first=0
 done
 
+# CDN 套娃：可选的第二个 xray inbound（VLESS+WS，仅监听 127.0.0.1:8080，无 TLS，
+# TLS 由 Cloudflare 边缘终结）。用与 Reality 不同的 per-device uuid，两条链路凭据隔离。
+CDN_INBOUND=""
+if [ "${CDN_ENABLE:-false}" = "true" ]; then
+  : "${CDN_WS_PATH:?CDN_ENABLE=true 但缺 CDN_WS_PATH}"
+  cdn_clients=""; cfirst=1
+  for d in $DEVICES; do
+    cuuid="$(vv "CDN_UUID_$d")"
+    [ -n "$cuuid" ] || { echo "missing CDN uuid for device $d"; exit 1; }
+    csep=","; [ $cfirst -eq 1 ] && csep=""
+    cdn_clients="${cdn_clients}${csep}
+          {\"id\": \"$cuuid\"}"
+    cfirst=0
+  done
+  CDN_INBOUND=",
+    {
+      \"listen\": \"127.0.0.1\",
+      \"port\": 8080,
+      \"protocol\": \"vless\",
+      \"settings\": {
+        \"clients\": [${cdn_clients}
+        ],
+        \"decryption\": \"none\"
+      },
+      \"streamSettings\": {
+        \"network\": \"ws\",
+        \"wsSettings\": {\"path\": \"/${CDN_WS_PATH}\"}
+      }
+    }"
+fi
+
 sudo mkdir -p /usr/local/etc/xray
 sudo tee /usr/local/etc/xray/config.json > /dev/null <<JSON
 {
@@ -121,7 +164,7 @@ sudo tee /usr/local/etc/xray/config.json > /dev/null <<JSON
           "shortIds": ["${REALITY_SHORTID}"]
         }
       }
-    }
+    }${CDN_INBOUND}
   ],
   "outbounds": [{"protocol": "freedom"}]
 }
@@ -232,11 +275,43 @@ DynamicUser=true
 WantedBy=multi-user.target
 UNIT
 
+# CDN 套娃：cloudflared（token 模式）。token 经 root-only EnvironmentFile 注入，
+# 不出现在 ExecStart / ps。CDN 关闭时停用并清理旧服务。
+CDN_SERVICES=""
+if [ "${CDN_ENABLE:-false}" = "true" ]; then
+  : "${CF_TUNNEL_TOKEN:?CDN_ENABLE=true 但缺 CF_TUNNEL_TOKEN}"
+  sudo mkdir -p /etc/cloudflared
+  printf 'TUNNEL_TOKEN=%s\n' "$CF_TUNNEL_TOKEN" | sudo tee /etc/cloudflared/env > /dev/null
+  sudo chmod 600 /etc/cloudflared/env
+  sudo tee /etc/systemd/system/cloudflared.service > /dev/null <<'UNIT'
+[Unit]
+Description=cloudflared Tunnel (CDN egress)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/cloudflared/env
+ExecStart=/usr/local/bin/cloudflared --no-autoupdate tunnel run
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+DynamicUser=true
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  CDN_SERVICES="cloudflared"
+else
+  sudo systemctl disable --now cloudflared >/dev/null 2>&1 || true
+  sudo rm -f /etc/systemd/system/cloudflared.service /etc/cloudflared/env
+fi
+
 sudo systemctl daemon-reload
-sudo systemctl enable xray hysteria anytls
-sudo systemctl restart xray hysteria anytls
+sudo systemctl enable xray hysteria anytls $CDN_SERVICES
+sudo systemctl restart xray hysteria anytls $CDN_SERVICES
 sleep 2
-sudo systemctl is-active xray hysteria anytls || true
+sudo systemctl is-active xray hysteria anytls $CDN_SERVICES || true
 
 echo "=== [8/8] Hardening (SSH + auto-updates) ==="
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq unattended-upgrades
@@ -250,7 +325,11 @@ sudo systemctl reload ssh || sudo systemctl reload sshd || true
 
 echo ""
 echo "=== Listening sockets ==="
-sudo ss -tulnp | grep -E 'xray|hysteria|anytls' || true
+sudo ss -tulnp | grep -E 'xray|hysteria|anytls|cloudflared|:8080' || true
+if [ "${CDN_ENABLE:-false}" = "true" ]; then
+  echo "--- cloudflared status ---"
+  sudo systemctl is-active cloudflared || true
+fi
 
 # machine-readable handoff line — local deployer greps this
 echo ""
