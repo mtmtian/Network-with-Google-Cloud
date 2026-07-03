@@ -34,36 +34,15 @@ gcloud_retry() {
 say "[1/4] 启用 Compute Engine API（幂等）"
 gcloud_retry services enable compute.googleapis.com
 
-say "[2/4] 检查 VM / 外部 IP：${INSTANCE_NAME}（${ZONE}）"
-VM_EXISTS=0
-VM_IP=""
-if gcloud_retry compute instances describe "$INSTANCE_NAME" --zone "$ZONE" >/dev/null 2>&1; then
-  VM_EXISTS=1
-  VM_IP="$(gcloud_retry compute instances describe "$INSTANCE_NAME" --zone "$ZONE" --format='value(networkInterfaces[0].accessConfigs[0].natIP)')"
-  [ -n "$VM_IP" ] || die "VM 已存在，但没有外部 IP"
-  STATIC_IP="$VM_IP"
-  setkv STATIC_IP "$STATIC_IP"
-  ok "VM 已存在，使用当前外部 IP：$STATIC_IP"
-
-  if gcloud_retry compute addresses describe "$IP_NAME" --region "$REGION" >/dev/null 2>&1; then
-    RESERVED_IP="$(gcloud_retry compute addresses describe "$IP_NAME" --region "$REGION" --format='value(address)')"
-    if [ "$RESERVED_IP" != "$VM_IP" ]; then
-      warn "保留静态 IP ${IP_NAME}=${RESERVED_IP} 未绑定到当前 VM；客户端配置会使用 VM 实际 IP ${VM_IP}"
-    fi
-  else
-    warn "未找到保留静态 IP ${IP_NAME}；客户端配置会使用 VM 当前外部 IP ${VM_IP}"
-  fi
+say "[2/4] 预留静态外部 IP：${IP_NAME}（${REGION} / ${NETWORK_TIER}）"
+if gcloud_retry compute addresses describe "$IP_NAME" --region "$REGION" >/dev/null 2>&1; then
+  ok "IP 已存在，复用"
 else
-  say "预留静态外部 IP：${IP_NAME}（${REGION} / ${NETWORK_TIER}）"
-  if gcloud_retry compute addresses describe "$IP_NAME" --region "$REGION" >/dev/null 2>&1; then
-    ok "IP 已存在，复用"
-  else
-    gcloud_retry compute addresses create "$IP_NAME" --region "$REGION" --network-tier "$NETWORK_TIER"
-  fi
-  STATIC_IP="$(gcloud_retry compute addresses describe "$IP_NAME" --region "$REGION" --format='value(address)')"
-  setkv STATIC_IP "$STATIC_IP"
-  ok "静态 IP：$STATIC_IP"
+  gcloud_retry compute addresses create "$IP_NAME" --region "$REGION" --network-tier "$NETWORK_TIER"
 fi
+STATIC_IP="$(gcloud_retry compute addresses describe "$IP_NAME" --region "$REGION" --format='value(address)')"
+setkv STATIC_IP "$STATIC_IP"
+ok "静态 IP：$STATIC_IP"
 
 say "[3/4] 防火墙规则（幂等）"
 FW_RULES="tcp:${REALITY_PORT},udp:${HY2_PORT},tcp:${ANYTLS_PORT}"
@@ -84,7 +63,7 @@ fi
 ok "防火墙就绪（代理端口对公网、SSH 仅 IAP）"
 
 say "[4/4] 创建 VM：${INSTANCE_NAME}（${MACHINE_TYPE} / Debian 12 / ${ZONE}）"
-if [ "$VM_EXISTS" -eq 1 ]; then
+if gcloud_retry compute instances describe "$INSTANCE_NAME" --zone "$ZONE" >/dev/null 2>&1; then
   ok "VM 已存在，跳过创建"
 else
   gcloud_retry compute instances create "$INSTANCE_NAME" \

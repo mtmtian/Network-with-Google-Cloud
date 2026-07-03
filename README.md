@@ -107,6 +107,7 @@ gcloud compute firewall-rules delete allow-proxy allow-iap-ssh
 | `gcloud not logged in` | `gcloud auth login` |
 | SSH not ready / scp retries | The VM was just created; wait a moment, the script retries 3×. Re-run `./deploy.sh` if it still fails. |
 | No Reality public key returned | The server install failed — check the inlined log above the error for the failing step. |
+| Proxy nodes timeout directly | Check whether `.secrets.env` `STATIC_IP` still matches the VM external IP; see [Troubleshooting Notes](docs/troubleshooting.md). |
 | Can connect but no US exit | In Clash, make sure the `🚀 Proxy` group points at `US-Reality` or `⚡ Auto`. |
 | Reality blocked | Try a different `REALITY_SNI` (any real, reachable foreign HTTPS site) and re-run. |
 
@@ -207,6 +208,7 @@ gcloud compute firewall-rules delete allow-proxy allow-iap-ssh
 | `gcloud 未登录` | `gcloud auth login` |
 | SSH 未就绪 / scp 重试 | VM 刚建好，稍等，脚本会重试 3 次；仍失败就重跑 `./deploy.sh`。 |
 | 没取回 Reality 公钥 | 服务端安装失败——看错误上方内嵌日志定位失败步骤。 |
+| 节点测速直接 timeout | 检查 `.secrets.env` 里的 `STATIC_IP` 是否仍等于 VM 当前外部 IP；见 [排障总结](docs/troubleshooting.md)。 |
 | 能连但出口不在美国 | 在 Clash 里把 `🚀 Proxy` 组指向 `US-Reality` 或 `⚡ Auto`。 |
 | Reality 被封 | 换一个 `REALITY_SNI`（任意一个真实可达的海外 HTTPS 站点）后重跑。 |
 
