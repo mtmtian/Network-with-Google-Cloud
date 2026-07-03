@@ -69,6 +69,7 @@ def cdn_proxy_block(dev_cdn_uuid):
         "    tls: true\n"
         "    udp: true\n"
         f"    servername: {CDN_HOSTNAME}\n"
+        f"    sni: {CDN_HOSTNAME}\n"
         "    client-fingerprint: chrome\n"
         "    ws-opts:\n"
         f'      path: "/{CDN_WS_PATH}"\n'
@@ -155,6 +156,7 @@ proxies:
     udp: true
     flow: xtls-rprx-vision
     servername: {REALITY_SNI}
+    sni: {REALITY_SNI}
     client-fingerprint: chrome
     reality-opts:
       public-key: {REALITY_PUBLIC}
@@ -165,6 +167,7 @@ proxies:
     server: {STATIC_IP}
     port: {HY2_PORT}
     password: "{HY2_PASSWORD}"
+    auth: "{HY2_PASSWORD}"
     sni: www.bing.com
     skip-cert-verify: true
     alpn:
@@ -184,9 +187,9 @@ proxy-groups:
   - name: "🚀 代理策略"
     type: select
     proxies:
+      - "US-Reality"
       - "⚡ 自动测速"
       - "🔧 手动选择"{CDN_REF}
-      - "US-Reality"
       - "US-HY2"
       - "US-AnyTLS"
       - DIRECT
