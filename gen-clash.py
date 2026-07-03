@@ -181,7 +181,7 @@ proxies:
     udp: true
 {CDN_PROXY}
 proxy-groups:
-  - name: "🚦 节点策略"
+  - name: "🚀 代理策略"
     type: select
     proxies:
       - "⚡ 自动测速"
@@ -213,106 +213,183 @@ proxy-groups:
   - name: "🌐 代理流量"
     type: select
     proxies:
-      - "🚦 节点策略"
+      - "🚀 代理策略"
       - "⚡ 自动测速"
-      - "🔧 手动选择"
+      - "🔧 手动选择"{CDN_REF}
       - "US-Reality"
       - "US-HY2"
       - "US-AnyTLS"
       - DIRECT
-      - REJECT
 
   - name: "↪️ 直连流量"
     type: select
     proxies:
       - DIRECT
-      - "🚦 节点策略"
-      - "⚡ 自动测速"
+      - "🚀 代理策略"
       - "🔧 手动选择"
-      - "US-Reality"
-      - "US-HY2"
-      - "US-AnyTLS"
-      - REJECT
 
   - name: "🛑 屏蔽流量"
     type: select
     proxies:
       - REJECT
       - DIRECT
-      - "🚦 节点策略"
-      - "⚡ 自动测速"
-      - "🔧 手动选择"
-      - "US-Reality"
-      - "US-HY2"
-      - "US-AnyTLS"
+      - "🚀 代理策略"
 
   - name: "🎯 兜底策略"
     type: select
     proxies:
-      - "🚦 节点策略"
+      - "🚀 代理策略"
       - DIRECT
-      - REJECT
-      - "⚡ 自动测速"
-      - "🔧 手动选择"
-      - "US-Reality"
-      - "US-HY2"
-      - "US-AnyTLS"
 
 rule-providers:
-  # 广告/追踪域名拦截清单（借鉴 Stash：远程清单，每天自动更新；需 Mihomo/Clash.Meta）
-  reject:
+  # --- MetaCubeX: AI / Google ---
+  ai:
     type: http
     behavior: domain
-    url: "https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/reject.txt"
-    path: ./ruleset/reject.yaml
+    format: mrs
+    url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/category-ai-%21cn.mrs"
+    path: ./ruleset/meta_ai.mrs
+    interval: 86400
+
+  google:
+    type: http
+    behavior: domain
+    format: mrs
+    url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/google.mrs"
+    path: ./ruleset/meta_google.mrs
+    interval: 86400
+
+  # --- blackmatrix7: iOS / Apple 功能补丁 ---
+  siri:
+    type: http
+    behavior: classical
+    format: yaml
+    url: "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Siri/Siri.yaml"
+    path: ./ruleset/bm7_siri.yaml
+    interval: 86400
+
+  icloud-private-relay:
+    type: http
+    behavior: classical
+    format: yaml
+    url: "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/iCloudPrivateRelay/iCloudPrivateRelay.yaml"
+    path: ./ruleset/bm7_icloud_private_relay.yaml
+    interval: 86400
+
+  # --- MetaCubeX: Apple 基础直连 ---
+  icloud:
+    type: http
+    behavior: domain
+    format: mrs
+    url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/icloud.mrs"
+    path: ./ruleset/meta_icloud.mrs
+    interval: 86400
+
+  apple-cn:
+    type: http
+    behavior: domain
+    format: mrs
+    url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/apple-cn.mrs"
+    path: ./ruleset/meta_apple_cn.mrs
+    interval: 86400
+
+  # --- blackmatrix7: 轻量广告拦截 ---
+  ads-lite:
+    type: http
+    behavior: classical
+    format: yaml
+    url: "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/AdvertisingLite/AdvertisingLite.yaml"
+    path: ./ruleset/bm7_ads_lite.yaml
+    interval: 86400
+
+  # --- MetaCubeX: 国内直连 ---
+  private:
+    type: http
+    behavior: domain
+    format: mrs
+    url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/private.mrs"
+    path: ./ruleset/meta_private.mrs
+    interval: 86400
+
+  private-ip:
+    type: http
+    behavior: ipcidr
+    format: mrs
+    url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geoip/private.mrs"
+    path: ./ruleset/meta_private_ip.mrs
+    interval: 86400
+
+  cn:
+    type: http
+    behavior: domain
+    format: mrs
+    url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/cn.mrs"
+    path: ./ruleset/meta_cn.mrs
+    interval: 86400
+
+  cn-ip:
+    type: http
+    behavior: ipcidr
+    format: mrs
+    url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geoip/cn.mrs"
+    path: ./ruleset/meta_cn_ip.mrs
+    interval: 86400
+
+  # --- MetaCubeX: 通讯 / 海外服务 ---
+  telegram:
+    type: http
+    behavior: domain
+    format: mrs
+    url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/telegram.mrs"
+    path: ./ruleset/meta_telegram.mrs
+    interval: 86400
+
+  telegram-ip:
+    type: http
+    behavior: ipcidr
+    format: mrs
+    url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geoip/telegram.mrs"
+    path: ./ruleset/meta_telegram_ip.mrs
+    interval: 86400
+
+  tiktok:
+    type: http
+    behavior: domain
+    format: mrs
+    url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/tiktok.mrs"
+    path: ./ruleset/meta_tiktok.mrs
     interval: 86400
 
 rules:
-  # --- [P0] 规则集保活：raw 直连，确保 reject 清单能拉到/更新 ---
-  - DOMAIN-SUFFIX,raw.githubusercontent.com,↪️ 直连流量
+  # --- [P0] 规则更新 / GitHub raw 走代理，避免大陆网络下规则集刷新失败 ---
+  - DOMAIN-SUFFIX,raw.githubusercontent.com,🌐 代理流量
 
-  # --- Local / private networks: always DIRECT ---
-  - DOMAIN-SUFFIX,lan,DIRECT
-  - DOMAIN-SUFFIX,local,DIRECT
-  - IP-CIDR,127.0.0.0/8,DIRECT,no-resolve
-  - IP-CIDR,10.0.0.0/8,DIRECT,no-resolve
-  - IP-CIDR,172.16.0.0/12,DIRECT,no-resolve
-  - IP-CIDR,192.168.0.0/16,DIRECT,no-resolve
-  - IP-CIDR,100.64.0.0/10,DIRECT,no-resolve
-  - IP-CIDR,224.0.0.0/4,DIRECT,no-resolve
-  - IP-CIDR6,fc00::/7,DIRECT,no-resolve
-  - IP-CIDR6,fe80::/10,DIRECT,no-resolve
+  # --- [P1] AI / Google 服务优先走代理，避免被国内/Apple/广告规则抢先命中 ---
+  - RULE-SET,ai,🌐 代理流量
+  - RULE-SET,google,🌐 代理流量
 
-  # --- Proxy allowlist: anti-restrict, global sites, attribution/business dashboards ---
-  - DOMAIN-SUFFIX,openai.com,🌐 代理流量
-  - DOMAIN-SUFFIX,chatgpt.com,🌐 代理流量
-  - DOMAIN-SUFFIX,oaistatic.com,🌐 代理流量
-  - DOMAIN-SUFFIX,oaiusercontent.com,🌐 代理流量
-  - DOMAIN-KEYWORD,openai,🌐 代理流量
-  - DOMAIN-SUFFIX,anthropic.com,🌐 代理流量
-  - DOMAIN-SUFFIX,claude.ai,🌐 代理流量
-  - DOMAIN-SUFFIX,claudeusercontent.com,🌐 代理流量
-  - DOMAIN-SUFFIX,dify.ai,🌐 代理流量
-  - DOMAIN-SUFFIX,coze.com,🌐 代理流量
-  - DOMAIN-SUFFIX,gemini.google.com,🌐 代理流量
-  - DOMAIN-SUFFIX,bard.google.com,🌐 代理流量
-  - DOMAIN-SUFFIX,makersuite.google.com,🌐 代理流量
-  - DOMAIN-SUFFIX,aistudio.google.com,🌐 代理流量
-  - DOMAIN-SUFFIX,generativelanguage.googleapis.com,🌐 代理流量
-  - DOMAIN-SUFFIX,perplexity.ai,🌐 代理流量
-  - DOMAIN-SUFFIX,pplx.ai,🌐 代理流量
-  - DOMAIN-SUFFIX,x.ai,🌐 代理流量
-  - DOMAIN-SUFFIX,grok.com,🌐 代理流量
-  - DOMAIN-SUFFIX,mistral.ai,🌐 代理流量
-  - DOMAIN-SUFFIX,huggingface.co,🌐 代理流量
-  - DOMAIN-SUFFIX,character.ai,🌐 代理流量
-  - DOMAIN-SUFFIX,poe.com,🌐 代理流量
-  - DOMAIN-SUFFIX,cohere.ai,🌐 代理流量
-  - DOMAIN-SUFFIX,cohere.com,🌐 代理流量
-  - DOMAIN-SUFFIX,stability.ai,🌐 代理流量
-  - DOMAIN-SUFFIX,replicate.com,🌐 代理流量
-  - DOMAIN-SUFFIX,runwayml.com,🌐 代理流量
-  - DOMAIN-SUFFIX,midjourney.com,🌐 代理流量
+  # --- [P2] iOS / Apple 海外能力：Siri 与 iCloud Private Relay 相关域名走代理 ---
+  - RULE-SET,siri,🌐 代理流量
+  - DOMAIN,guzzoni.smoot.apple.com,🌐 代理流量
+  - DOMAIN,probe.siri.apple.com,🌐 代理流量
+  - DOMAIN,seed.siri.apple.com,🌐 代理流量
+  - DOMAIN,seed-sequoia.siri.apple.com,🌐 代理流量
+  - DOMAIN,seed-swallow.siri.apple.com,🌐 代理流量
+  - DOMAIN,sequoia.apple.com,🌐 代理流量
+  - DOMAIN,swallow.apple.com,🌐 代理流量
+  - RULE-SET,icloud-private-relay,🌐 代理流量
+
+  # --- [P3] 业务/归因/广告平台保护：必须放在广告拦截前，避免误杀 ---
+  - DOMAIN-SUFFIX,tradingview.com,🌐 代理流量
+  - DOMAIN-SUFFIX,applovin.com,🌐 代理流量
+  - DOMAIN-SUFFIX,applvn.com,🌐 代理流量
+  - DOMAIN-SUFFIX,applovinedge.com,🌐 代理流量
+  - DOMAIN-SUFFIX,appsflyer.com,🌐 代理流量
+  - DOMAIN-SUFFIX,adjust.com,🌐 代理流量
+  - DOMAIN-SUFFIX,adj.st,🌐 代理流量
+  - DOMAIN-SUFFIX,kochava.com,🌐 代理流量
+  - DOMAIN-SUFFIX,branch.io,🌐 代理流量
+  - DOMAIN-SUFFIX,singular.net,🌐 代理流量
   - DOMAIN-SUFFIX,ads.google.com,🌐 代理流量
   - DOMAIN-SUFFIX,adwords.google.com,🌐 代理流量
   - DOMAIN-SUFFIX,analytics.google.com,🌐 代理流量
@@ -322,104 +399,32 @@ rules:
   - DOMAIN-SUFFIX,googletagservices.com,🌐 代理流量
   - DOMAIN-SUFFIX,ads.tiktok.com,🌐 代理流量
   - DOMAIN-SUFFIX,business.tiktok.com,🌐 代理流量
-  - DOMAIN-SUFFIX,tradingview.com,🌐 代理流量
-  - DOMAIN,dash.applovin.com,🌐 代理流量
-  - DOMAIN-SUFFIX,applovin.com,🌐 代理流量
-  - DOMAIN-SUFFIX,applvn.com,🌐 代理流量
-  - DOMAIN-SUFFIX,applovinedge.com,🌐 代理流量
-  - DOMAIN-SUFFIX,appsflyer.com,🌐 代理流量
-  - DOMAIN,suite.adjust.com,🌐 代理流量
-  - DOMAIN-SUFFIX,adjust.com,🌐 代理流量
-  - DOMAIN-SUFFIX,adj.st,🌐 代理流量
-  - DOMAIN-SUFFIX,kochava.com,🌐 代理流量
-  - DOMAIN-SUFFIX,branch.io,🌐 代理流量
-  - DOMAIN-SUFFIX,singular.net,🌐 代理流量
-  # --- 特殊域名（借鉴 Stash）：Siri 走代理（须在 apple 直连之前）、金融、Telegram ---
-  - DOMAIN-SUFFIX,guzzoni.apple.com,🌐 代理流量
-  # iCloud 私人中继（入口 gateway + 三家出口 egress）+ 连通性探测 + 定位/AppStore。
-  # 必须排在下方 apple.com / icloud.com / mzstatic.com 的「直连」规则之前，否则被吞。
-  - DOMAIN-SUFFIX,apple-relay.apple.com,🌐 代理流量
-  - DOMAIN-SUFFIX,apple-relay.fastly-edge.com,🌐 代理流量
-  - DOMAIN-SUFFIX,apple-relay.cloudflare.com,🌐 代理流量
-  - DOMAIN-SUFFIX,gateway.icloud.com,🌐 代理流量
-  - DOMAIN-SUFFIX,cp4.cloudflare.com,🌐 代理流量
-  - DOMAIN-SUFFIX,gspe1-ssl.ls.apple.com,🌐 代理流量
-  - DOMAIN-SUFFIX,apps.mzstatic.com,🌐 代理流量
-  - DOMAIN-SUFFIX,okx.com,🌐 代理流量
-  - DOMAIN-SUFFIX,binance.com,🌐 代理流量
-  - DOMAIN-SUFFIX,bybit.com,🌐 代理流量
-  - DOMAIN-SUFFIX,gate.io,🌐 代理流量
-  - DOMAIN-SUFFIX,interactivebrokers.com,🌐 代理流量
-  - DOMAIN-SUFFIX,webull.com,🌐 代理流量
-  - DOMAIN-SUFFIX,telegram.org,🌐 代理流量
-  - DOMAIN-SUFFIX,t.me,🌐 代理流量
-  - DOMAIN-KEYWORD,telegram,🌐 代理流量
-  - DOMAIN-SUFFIX,google.com,🌐 代理流量
-  - DOMAIN-SUFFIX,googleapis.com,🌐 代理流量
-  - DOMAIN-SUFFIX,gstatic.com,🌐 代理流量
-  - DOMAIN-SUFFIX,ggpht.com,🌐 代理流量
-  - DOMAIN-SUFFIX,googleusercontent.com,🌐 代理流量
-  - DOMAIN-SUFFIX,youtube.com,🌐 代理流量
-  - DOMAIN-SUFFIX,youtu.be,🌐 代理流量
-  - DOMAIN-SUFFIX,ytimg.com,🌐 代理流量
-  - DOMAIN-SUFFIX,googlevideo.com,🌐 代理流量
-  - DOMAIN-SUFFIX,gmail.com,🌐 代理流量
-  - DOMAIN-SUFFIX,github.com,🌐 代理流量
-  - DOMAIN-SUFFIX,githubusercontent.com,🌐 代理流量
-  - DOMAIN-SUFFIX,githubassets.com,🌐 代理流量
-  - DOMAIN-SUFFIX,twitter.com,🌐 代理流量
-  - DOMAIN-SUFFIX,x.com,🌐 代理流量
-  - DOMAIN-SUFFIX,twimg.com,🌐 代理流量
-  - DOMAIN-SUFFIX,reddit.com,🌐 代理流量
-  - DOMAIN-SUFFIX,redditstatic.com,🌐 代理流量
-  - DOMAIN-SUFFIX,redd.it,🌐 代理流量
-  - DOMAIN-SUFFIX,wikipedia.org,🌐 代理流量
-  - DOMAIN-SUFFIX,wikimedia.org,🌐 代理流量
-  - DOMAIN-SUFFIX,stackoverflow.com,🌐 代理流量
-  - DOMAIN-SUFFIX,medium.com,🌐 代理流量
 
-  # --- Direct allowlist: CN domains, Apple, domestic work platforms ---
-  - DOMAIN-SUFFIX,e.kuaishou.com,↪️ 直连流量
-  - DOMAIN-SUFFIX,business.oceanengine.com,↪️ 直连流量
-  - DOMAIN-SUFFIX,cas.baidu.com,↪️ 直连流量
-  - DOMAIN-SUFFIX,e.qq.com,↪️ 直连流量
-  - DOMAIN-SUFFIX,oceanengine.com,↪️ 直连流量
-  - DOMAIN-SUFFIX,kylin.baidu.com,↪️ 直连流量
-  - DOMAIN-SUFFIX,apple.com,↪️ 直连流量
-  - DOMAIN-SUFFIX,icloud.com,↪️ 直连流量
-  - DOMAIN-SUFFIX,cdn-apple.com,↪️ 直连流量
-  - DOMAIN-SUFFIX,mzstatic.com,↪️ 直连流量
-  - DOMAIN-SUFFIX,cn,↪️ 直连流量
-  - DOMAIN-KEYWORD,-cn,↪️ 直连流量
-  - DOMAIN-SUFFIX,baidu.com,↪️ 直连流量
-  - DOMAIN-SUFFIX,qq.com,↪️ 直连流量
-  - DOMAIN-SUFFIX,weixin.qq.com,↪️ 直连流量
-  - DOMAIN-SUFFIX,bilibili.com,↪️ 直连流量
-  - DOMAIN-SUFFIX,taobao.com,↪️ 直连流量
-  - DOMAIN-SUFFIX,tmall.com,↪️ 直连流量
-  - DOMAIN-SUFFIX,alipay.com,↪️ 直连流量
-  - DOMAIN-SUFFIX,zhihu.com,↪️ 直连流量
-  - DOMAIN-SUFFIX,douban.com,↪️ 直连流量
-  - DOMAIN-SUFFIX,sina.com.cn,↪️ 直连流量
-  - DOMAIN-SUFFIX,163.com,↪️ 直连流量
-  - DOMAIN-SUFFIX,126.com,↪️ 直连流量
-  - DOMAIN-SUFFIX,douyin.com,↪️ 直连流量
-  - DOMAIN-SUFFIX,xiaohongshu.com,↪️ 直连流量
-  # 流媒体（netflix/hulu/disney+/hbomax/peacock 等）不再硬编码直连，
-  # 落到下方 MATCH→兜底→代理，与 Stash（proxy.txt 兜到代理）一致。
-
-  # --- Spotify 直连（借鉴 Stash）---
+  # --- [P4] 原手写保留项：未确认是否仍需直连，先按旧配置保守保留 ---
   - DOMAIN-KEYWORD,spotify,↪️ 直连流量
   - DOMAIN-SUFFIX,scdn.co,↪️ 直连流量
 
-  # --- 广告/追踪拦截（借鉴 Stash：放在精确放行之后、兜底之前，不误伤业务/归因域名）---
-  - RULE-SET,reject,🛑 屏蔽流量
+  # --- [P5] 轻量广告拦截 ---
+  - RULE-SET,ads-lite,🛑 屏蔽流量
 
-  # --- GeoIP fallback ---
-  - GEOIP,PRIVATE,DIRECT,no-resolve
-  - GEOIP,CN,↪️ 直连流量
+  # --- [P6] Apple 基础服务直连：放在 Siri/Private Relay 后，避免海外能力被直连抢走 ---
+  - RULE-SET,icloud,↪️ 直连流量
+  - RULE-SET,apple-cn,↪️ 直连流量
 
-  # --- Default ---
+  # --- [P7] 通讯 / 海外 App ---
+  - RULE-SET,telegram,🌐 代理流量
+  - RULE-SET,telegram-ip,🌐 代理流量,no-resolve
+  - RULE-SET,tiktok,🌐 代理流量
+
+  # --- [P8] 国内直连 ---
+  - RULE-SET,private,DIRECT
+  - RULE-SET,private-ip,DIRECT,no-resolve
+  - RULE-SET,cn,↪️ 直连流量
+  - RULE-SET,cn-ip,↪️ 直连流量,no-resolve
+  - GEOIP,LAN,DIRECT,no-resolve
+  - GEOIP,CN,↪️ 直连流量,no-resolve
+
+  # --- [P9] 兜底 ---
   - MATCH,🎯 兜底策略
 """
 
