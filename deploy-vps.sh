@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Entry point: configure an already-provisioned Debian/Ubuntu VPS (DMIT, etc.).
+# Entry point: configure an already-provisioned Debian/Ubuntu VPS.
 set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VPS_PROFILE="${VPS_PROFILE:-}"

@@ -21,7 +21,7 @@ STATE_DIR = pathlib.Path(
         ROOT / "profiles" / PROFILE if PROFILE else ROOT,
     )
 )
-OUT_DIR = pathlib.Path(os.environ.get("NETWORK_NODE_CLIENTS_DIR", STATE_DIR / "clients"))
+OUT_DIR = pathlib.Path(os.environ.get("NETWORK_NODE_CLIENTS_DIR", ROOT / "clash-configs"))
 
 
 def load_kv(path):

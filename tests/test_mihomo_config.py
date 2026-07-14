@@ -42,7 +42,7 @@ class MihomoConfigIntegrationTest(unittest.TestCase):
             )
             self.assertEqual(generated.returncode, 0, generated.stderr)
 
-            config = root / "clients" / "test-mac.yaml"
+            config = root / "clash-configs" / "test-mac.yaml"
             parsed = subprocess.run(
                 [mihomo, "-t", "-d", tmp, "-f", str(config)],
                 text=True,

@@ -19,8 +19,8 @@ Use a different profile for every server, for example `dmit`, `frantech`, or `ne
 The first run creates `profiles/<profile>/deploy.conf` and `.secrets.env`, secures the host, creates the `mt` sudo user, installs the shared protocols, and writes:
 
 ```text
-profiles/<profile>/clients/<profile>-mac.yaml
-profiles/<profile>/clients/<profile>-iphone.yaml
+clash-configs/<profile>-mac.yaml
+clash-configs/<profile>-iphone.yaml
 ```
 
 After the first successful run, root login is disabled and `mt` is the maintenance user:
@@ -36,8 +36,8 @@ Use `deploy-vps.sh` when the provider already exposes a reachable Debian/Ubuntu 
 ## Profile isolation checklist
 
 - Choose a new profile name before touching a new host.
-- Keep `deploy.conf`, `.secrets.env`, `clients/`, and `ssh/` inside that profile only.
-- Never copy private keys to the server, stage `profiles/`, or upload client YAML.
+- Keep `deploy.conf`, `.secrets.env`, and `ssh/` inside that profile only.
+- Keep generated YAML in `clash-configs/`; never stage `profiles/`, SSH keys, or client YAML.
 - Regenerate one profile's clients with:
 
 ```bash

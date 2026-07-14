@@ -58,10 +58,10 @@ class GenerateClashConfigTest(unittest.TestCase):
             )
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            outputs = sorted((root / "clients").glob("*.yaml"))
+            outputs = sorted((root / "clash-configs").glob("*.yaml"))
             self.assertEqual([path.name for path in outputs], ["test-mac.yaml", "test-phone.yaml"])
 
-            mac_path = root / "clients" / "test-mac.yaml"
+            mac_path = root / "clash-configs" / "test-mac.yaml"
             mac = mac_path.read_text()
             self.assertEqual(mac_path.stat().st_mode & 0o777, 0o600)
             self.assertIn("server: 203.0.113.10", mac)
@@ -74,7 +74,7 @@ class GenerateClashConfigTest(unittest.TestCase):
     def test_only_replaces_yaml_for_the_active_profile(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
-            clients = root / "clients"
+            clients = root / "clash-configs"
             clients.mkdir()
             unrelated = clients / "gcloud-mac.yaml"
             unrelated.write_text("preserve: true\n")

@@ -51,7 +51,6 @@ class DeployOutputTest(unittest.TestCase):
                 PROJECT_DIR='{root}'
                 PROFILE_NAME=frantech
                 NETWORK_NODE_STATE_DIR='{root / 'state'}'
-                NETWORK_NODE_CLIENTS_DIR='{root / 'clients'}'
                 . \"$PROJECT_DIR/core/common.sh\"
                 . \"$PROJECT_DIR/core/deploy.sh\"
                 PROVIDER_TITLE='Test VPS'
@@ -65,9 +64,13 @@ class DeployOutputTest(unittest.TestCase):
                 provider_provision() {{ setkv STATIC_IP 203.0.113.10; }}
                 provider_install() {{ printf 'REALITY_PUBLIC_KEY=test-public-key\\n'; }}
                 provider_print_summary() {{ :; }}
-                run_deploy
+                output=\"$(run_deploy)\"
+                printf '%s\\n' \"$output\"
                 test -f \"$STATE_DIR/.secrets.env\"
                 test ! -e \"$PROJECT_DIR/profiles/gcloud/.secrets.env\"
+                test -f \"$PROJECT_DIR/clash-configs/frantech-mac.yaml\"
+                test -f \"$PROJECT_DIR/clash-configs/frantech-iphone.yaml\"
+                grep -F '配置文件  : {root}/clash-configs/frantech-*.yaml' <<<\"$output\" >/dev/null
                 """
             )
             result = subprocess.run(
