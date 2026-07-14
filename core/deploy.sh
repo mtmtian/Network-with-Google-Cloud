@@ -47,7 +47,9 @@ run_deploy() {
   export REALITY_TARGET
   ok "$PROVIDER_DESCRIPTION  设备=[$DEVICES]"
 
-  bash "$PROJECT_DIR/core/secrets.sh"
+  PROFILE_NAME="$PROFILE_NAME" \
+    NETWORK_NODE_STATE_DIR="$STATE_DIR" \
+    bash "$PROJECT_DIR/core/secrets.sh"
   load_secrets
 
   provider_provision
