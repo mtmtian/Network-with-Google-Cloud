@@ -19,7 +19,9 @@ import vps_stock  # noqa: E402
 
 from vps_stock import (  # noqa: E402
     check_bwh_json,
+    check_colocrossing_markdown,
     check_counted_html,
+    check_dedione_html,
     check_frantech_html,
     check_html,
     check_novixlink_markdown,
@@ -41,6 +43,55 @@ from vps_stock import (  # noqa: E402
 
 
 class VpsStockParsingTests(unittest.TestCase):
+    def test_colocrossing_config_page_parses_target_monthly_plan(self):
+        provider = {
+            "id": "colocrossing-cloud-vps-1gb",
+            "provider": "ColoCrossing",
+            "region": "Multi-location",
+            "priority": "value",
+            "network": "route optimization unconfirmed",
+            "url": "https://cloud.colocrossing.com/index.php?rp=/store/cloud-virtual-private-servers/1gb-ram",
+            "plan_name": "Cloud Virtual Private Servers - 1GB RAM",
+            "target_price": 3.95,
+        }
+        markdown = """
+# Configure
+## Cloud Virtual Private Servers - 1GB RAM
+## Choose Billing Cycle
+###### Monthly
+$3.95 USD
+Total Due Today
+$3.95 USD
+Continue
+Add to Cart
+"""
+        result = check_colocrossing_markdown(provider, 200, markdown)
+        self.assertEqual(result["status"], "available")
+        self.assertEqual(result["confidence"], "medium")
+        self.assertEqual(result["plans"][0]["price"]["amount"], 3.95)
+        self.assertTrue(result["plans"][0]["price"]["price_eligible"])
+
+    def test_colocrossing_config_page_detects_sold_out_target_plan(self):
+        provider = {
+            "id": "colocrossing-cloud-vps-2gb",
+            "provider": "ColoCrossing",
+            "region": "Multi-location",
+            "priority": "value",
+            "network": "route optimization unconfirmed",
+            "url": "https://cloud.colocrossing.com/index.php?rp=/store/cloud-virtual-private-servers/2gb-ram",
+            "plan_name": "Cloud Virtual Private Servers - 2GB RAM",
+            "target_price": 6.95,
+        }
+        markdown = """
+## Cloud Virtual Private Servers - 2GB RAM
+###### Monthly
+$6.95 USD
+Out of Stock
+"""
+        result = check_colocrossing_markdown(provider, 200, markdown)
+        self.assertEqual(result["status"], "out_of_stock")
+        self.assertFalse(result["plans"][0]["available"])
+
     def test_buyvm_cart_parses_per_plan_available_counts(self):
         provider = {
             "id": "buyvm-lv",
@@ -253,11 +304,102 @@ class VpsStockParsingTests(unittest.TestCase):
         self.assertTrue(result["plans"][0]["price"]["price_eligible"])
         self.assertFalse(result["plans"][0]["available"])
 
+    def test_zgovps_whmcs_offer_parses_target_quarterly_plan_stock(self):
+        provider = {
+            "id": "zgovps-lax-optimized-starter-18-quarterly",
+            "provider": "ZgoVPS",
+            "region": "Los Angeles, US",
+            "priority": "cn2",
+            "network": "GIA / 9929 / CMIN2",
+            "url": "https://clients.zgovps.com/index.php?/cart/los-angeles-amd-optimised-vps/",
+            "plan_name": "Starter",
+            "target_price": 18.0,
+            "target_period": "quarter",
+        }
+        html = """
+        <form method="post">
+          <input name="id" type="hidden" value="142">
+          <strong class="mb-3">Starter</strong>
+          <select name="cycle">
+            <option value="q" selected="selected">$18.00 USD Quarterly</option>
+            <option value="s">$34.00 USD Semi-Annually</option>
+          </select>
+          <button disabled="disabled">Out of stock!</button>
+        </form>
+        """
+        result = check_whmcs_offer_html(provider, 200, html)
+        self.assertEqual(result["status"], "out_of_stock")
+        self.assertEqual(result["plans"][0]["product_id"], 142)
+        self.assertEqual(result["plans"][0]["price"]["period"], "quarter")
+        self.assertEqual(result["plans"][0]["price"]["monthly_equivalent"], 6.0)
+        self.assertTrue(result["plans"][0]["price"]["price_eligible"])
+        self.assertFalse(result["plans"][0]["available"])
+
     def test_zgovps_52_dollar_offers_are_separate_default_sources(self):
         sources = {item["id"]: item for item in select_providers()}
         self.assertEqual(sources["zgovps-lax-special-52"]["target_price"], 52.0)
+        self.assertEqual(sources["zgovps-lax-optimized-starter-18-quarterly"]["target_price"], 18.0)
+        self.assertEqual(sources["zgovps-lax-optimized-starter-18-quarterly"]["target_period"], "quarter")
         self.assertEqual(sources["zgovps-hkg-special-52"]["target_price"], 52.0)
         self.assertEqual(sources["zgovps-lax-special-52"]["priority"], "cn2")
+
+    def test_dedione_html_parses_target_annual_product_card(self):
+        provider = {
+            "id": "dedione-lax-cmin2-1c1g10g-annual",
+            "provider": "DediOne",
+            "region": "Los Angeles, US",
+            "priority": "cn2",
+            "network": "CMIN2 / AS58807; CUII / AS9929; no CN2",
+            "url": "https://dedione.com/store/los-angeles-kvm-vps-cmin2-cuii",
+            "plan_name": "LAX.VPS.CMIN2.1C1G10G-Annual",
+            "target_price": 29.99,
+            "target_period": "year",
+        }
+        html = """
+        <div class="package" id="product243">
+          <h3 class="package-title">LAX.VPS.CMIN2.1C1G10G-Annual</h3>
+          <div class="price-amount">$29.99 USD</div>
+          <div class="price-cycle">Annually</div>
+          <a class="btn btn-primary btn-order-now">Order Now</a>
+        </div>
+        <div class="package" id="product244">
+          <h3 class="package-title">LAX.VPS.CMIN2.2C2G20G-Annual</h3>
+          <div class="price-amount">$59.99 USD</div>
+          <div class="price-cycle">Annually</div>
+          <a class="btn btn-primary btn-order-now">Order Now</a>
+        </div>
+        """
+        result = check_dedione_html(provider, 200, html)
+        self.assertEqual(result["status"], "available")
+        self.assertEqual(len(result["plans"]), 1)
+        self.assertEqual(result["plans"][0]["price"]["amount"], 29.99)
+        self.assertEqual(result["plans"][0]["price"]["monthly_equivalent"], 2.5)
+        self.assertTrue(result["plans"][0]["price"]["price_eligible"])
+        self.assertTrue(result["plans"][0]["available"])
+
+    def test_dedione_html_marks_target_product_without_order_action_sold_out(self):
+        provider = {
+            "id": "dedione-lax-cmin2-1c1g10g-annual",
+            "provider": "DediOne",
+            "region": "Los Angeles, US",
+            "priority": "cn2",
+            "network": "CMIN2 / AS58807; CUII / AS9929; no CN2",
+            "url": "https://dedione.com/store/los-angeles-kvm-vps-cmin2-cuii",
+            "plan_name": "LAX.VPS.CMIN2.1C1G10G-Annual",
+            "target_price": 29.99,
+            "target_period": "year",
+        }
+        html = """
+        <div class="package" id="product243">
+          <h3 class="package-title">LAX.VPS.CMIN2.1C1G10G-Annual</h3>
+          <div class="price-amount">$29.99 USD</div>
+          <div class="price-cycle">Annually</div>
+          <span>Out of stock</span>
+        </div>
+        """
+        result = check_dedione_html(provider, 200, html)
+        self.assertEqual(result["status"], "out_of_stock")
+        self.assertFalse(result["plans"][0]["available"])
 
     def test_novixlink_sources_are_separate_cn2_stock_sources(self):
         sources = {item["id"]: item for item in select_providers()}
@@ -273,6 +415,8 @@ class VpsStockParsingTests(unittest.TestCase):
 
     def test_default_selection_is_the_focus_group(self):
         focused = {item["id"] for item in select_providers()}
+        self.assertIn("colocrossing-cloud-vps-1gb", focused)
+        self.assertIn("colocrossing-cloud-vps-2gb", focused)
         self.assertIn("buyvm-lv", focused)
         self.assertIn("greencloud-store", focused)
         self.assertIn("dmit-x", focused)
@@ -280,6 +424,8 @@ class VpsStockParsingTests(unittest.TestCase):
         self.assertIn("hostdare-lax-cn2-amd", focused)
         self.assertIn("hostdare-lax-cn2-hdd", focused)
         self.assertIn("bwh-lax-cn2", focused)
+        self.assertIn("zgovps-lax-optimized-starter-18-quarterly", focused)
+        self.assertIn("dedione-lax-cmin2-1c1g10g-annual", focused)
         self.assertNotIn("greencloud-x", focused)
         self.assertNotIn("racknerd-lax", focused)
         self.assertNotIn("cloudcone-lax", focused)
@@ -325,9 +471,13 @@ class VpsStockParsingTests(unittest.TestCase):
         self.assertEqual(rows["hostdare-lax-cn2-hdd"]["level"], "stock")
         self.assertEqual(rows["bwh-lax-cn2"]["level"], "stock")
         self.assertEqual(rows["zgovps-lax-special-52"]["level"], "stock")
+        self.assertEqual(rows["zgovps-lax-optimized-starter-18-quarterly"]["level"], "stock")
+        self.assertEqual(rows["dedione-lax-cmin2-1c1g10g-annual"]["level"], "order_signal")
         self.assertEqual(rows["zgovps-hkg-special-52"]["level"], "stock")
         self.assertEqual(rows["novixlink-ntt-isp-vps"]["level"], "stock")
         self.assertEqual(rows["novixlink-gtt-isp-vps"]["level"], "stock")
+        self.assertEqual(rows["colocrossing-cloud-vps-1gb"]["level"], "order_signal")
+        self.assertEqual(rows["colocrossing-cloud-vps-2gb"]["level"], "order_signal")
         self.assertNotIn("dmit-x", rows)
         self.assertNotIn("racknerd-lax", rows)
 
@@ -344,6 +494,8 @@ class VpsStockParsingTests(unittest.TestCase):
                 "novixlink-ntt-isp-vps",
                 "novixlink-gtt-isp-vps",
                 "zgovps-lax-special-52",
+                "zgovps-lax-optimized-starter-18-quarterly",
+                "dedione-lax-cmin2-1c1g10g-annual",
                 "dmit-reddit",
                 "vps-discovery-reddit-cn2-vps",
                 "vps-discovery-x-cn2-vps",
