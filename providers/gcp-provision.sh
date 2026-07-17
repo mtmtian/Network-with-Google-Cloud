@@ -21,8 +21,9 @@ gcloud_retry() {
   for attempt in 1 2 3; do
     if "${GC[@]}" "$@"; then
       return 0
+    else
+      status=$?
     fi
-    status=$?
     if [ "$attempt" -lt 3 ]; then
       warn "gcloud 请求失败，${delay}s 后重试 (${attempt}/3)..."
       sleep "$delay"

@@ -15,8 +15,8 @@ provider_init() {
   else
     VPS_SSH_KEY="${VPS_SSH_KEY:-$HOME/.ssh/id_ed25519}"
   fi
-  VPS_SSH_OPTS=(-i "$VPS_SSH_KEY" -p "$VPS_SSH_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10)
-  VPS_SCP_OPTS=(-i "$VPS_SSH_KEY" -P "$VPS_SSH_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10)
+  VPS_SSH_OPTS=(-i "$VPS_SSH_KEY" -p "$VPS_SSH_PORT" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
+  VPS_SCP_OPTS=(-i "$VPS_SSH_KEY" -P "$VPS_SSH_PORT" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
 }
 
 provider_preflight() {

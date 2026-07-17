@@ -51,7 +51,7 @@ DEVICES="mac iphone"
 # ── Cloudflare CDN 套娃出口（可选）──
 # 开启后多一条出口：客户端 → Cloudflare 边缘 → Cloudflare Tunnel → cloudflared@VM
 # → xray VLESS+WS(127.0.0.1:8080) → 直出。客户端只与 Cloudflare anycast IP 通信，
-# 真实 VM IP 对线路侧不可见。false 或缺 CF_API_TOKEN 时完全跳过，不影响其它三个节点。
+# 真实 VM IP 对线路侧不可见。false 时跳过；true 时必须先准备 CF_API_TOKEN，缺失会在改服务器前直接停止。
 CDN_ENABLE=false
 # true 时只生成 Cloudflare WS 节点，并关闭直连代理端口；会失去原生 HY2/AnyTLS 直连能力。
 CDN_ONLY=false
@@ -68,4 +68,5 @@ HYSTERIA_VERSION=app/v2.10.0
 ANYTLS_VERSION=0.0.13
 CLOUDFLARED_VERSION=2026.7.2
 # 注意：CF_API_TOKEN（建隧道用）与 CF_TUNNEL_TOKEN（cloudflared 连接用）属密钥，
-# 不写在本文件，只放 .secrets.env。首次运行会提示你把 CF_API_TOKEN 写进去。
+# 不写在本文件，只放 .secrets.env。Token 权限需要 Account>Cloudflare Tunnel:Edit、
+# Zone>Zone:Read、Zone>DNS:Edit，并限制到目标 zone。
