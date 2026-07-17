@@ -11,9 +11,34 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${1:-/tmp/server-env.sh}"
 # shellcheck disable=SC1090
 . "$ENV_FILE"
+XRAY_VERSION="${XRAY_VERSION:-v26.3.27}"
+HYSTERIA_VERSION="${HYSTERIA_VERSION:-app/v2.10.0}"
+ANYTLS_VERSION="${ANYTLS_VERSION:-0.0.13}"
+CLOUDFLARED_VERSION="${CLOUDFLARED_VERSION:-2026.7.2}"
+HY2_SNI="${HY2_SNI:-www.bing.com}"
+HY2_MASQUERADE_URL="${HY2_MASQUERADE_URL:-https://www.bing.com}"
+HY2_PORT_RANGE="${HY2_PORT_RANGE:-}"
+HY2_HOP_INTERVAL="${HY2_HOP_INTERVAL:-}"
+HY2_ACME_ENABLE="${HY2_ACME_ENABLE:-false}"
+HY2_ACME_DNS_PROVIDER="${HY2_ACME_DNS_PROVIDER:-cloudflare}"
 : "${REALITY_PORT:?}" "${REALITY_TARGET:?}" "${REALITY_SHORTID:?}" "${DEVICES:?}"
 REALITY_SNI="${REALITY_SNI:-}"
 : "${HY2_PORT:?}" "${ANYTLS_PORT:?}" "${ANYTLS_PASS:?}"
+
+case "$REALITY_TARGET" in
+  *:*) ;;
+  *) echo "REALITY_TARGET 必须是 host:port" >&2; exit 1 ;;
+esac
+if [ "$HY2_ACME_ENABLE" = "true" ]; then
+  : "${HY2_ACME_DOMAIN:?HY2_ACME_ENABLE=true 但缺 HY2_ACME_DOMAIN}"
+  : "${HY2_ACME_EMAIL:?HY2_ACME_ENABLE=true 但缺 HY2_ACME_EMAIL}"
+  : "${HY2_ACME_DNS_TOKEN:?HY2_ACME_ENABLE=true 但缺 HY2_ACME_DNS_TOKEN}"
+  [ "$HY2_ACME_DNS_PROVIDER" = "cloudflare" ] || {
+    echo "当前只实现 Hysteria2 Cloudflare DNS-01，HY2_ACME_DNS_PROVIDER 必须为 cloudflare" >&2
+    exit 1
+  }
+  HY2_SNI="$HY2_ACME_DOMAIN"
+fi
 
 vv() { eval "printf '%s' \"\${$1:-}\""; }   # indirect var read
 
@@ -54,7 +79,7 @@ case "$ARCH" in
   *) echo "Unsupported arch: $ARCH"; exit 1 ;;
 esac
 download_file /tmp/xray.zip \
-  "https://github.com/XTLS/Xray-core/releases/latest/download/${XRAY_ZIP}"
+  "https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/${XRAY_ZIP}"
 sudo unzip -oq /tmp/xray.zip -d /usr/local/bin xray
 sudo chmod 0755 /usr/local/bin/xray
 print_first_line /usr/local/bin/xray version
@@ -65,7 +90,7 @@ case "$ARCH" in
   aarch64) HY2_BIN="hysteria-linux-arm64" ;;
 esac
 download_file /tmp/hysteria \
-  "https://github.com/apernet/hysteria/releases/latest/download/${HY2_BIN}"
+  "https://github.com/apernet/hysteria/releases/download/${HYSTERIA_VERSION}/${HY2_BIN}"
 sudo install -m 0755 /tmp/hysteria /usr/local/bin/hysteria
 print_first_line /usr/local/bin/hysteria version
 
@@ -74,8 +99,8 @@ case "$ARCH" in
   x86_64)  AT_ARCH="amd64" ;;
   aarch64) AT_ARCH="arm64" ;;
 esac
-AT_VER="$(fetch_url https://api.github.com/repos/anytls/anytls-go/releases/latest | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"].removeprefix("v"))')"
-[ -n "$AT_VER" ] || { echo "Failed to fetch anytls latest version"; exit 1; }
+AT_VER="$ANYTLS_VERSION"
+[ -n "$AT_VER" ] || { echo "ANYTLS_VERSION 不能为空"; exit 1; }
 download_file /tmp/anytls.zip \
   "https://github.com/anytls/anytls-go/releases/download/v${AT_VER}/anytls_${AT_VER}_linux_${AT_ARCH}.zip"
 sudo rm -rf /tmp/anytls-extract
@@ -90,7 +115,7 @@ if [ "${CDN_ENABLE:-false}" = "true" ]; then
     aarch64) CF_BIN="cloudflared-linux-arm64" ;;
   esac
   download_file /tmp/cloudflared \
-    "https://github.com/cloudflare/cloudflared/releases/latest/download/${CF_BIN}"
+    "https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/${CF_BIN}"
   sudo install -m 0755 /tmp/cloudflared /usr/local/bin/cloudflared
   print_first_line /usr/local/bin/cloudflared --version
 fi
@@ -143,7 +168,7 @@ if [ "${CDN_ENABLE:-false}" = "true" ]; then
           {\"id\": \"$cuuid\"}"
     cfirst=0
   done
-  CDN_INBOUND=",
+  CDN_INBOUND="
     {
       \"listen\": \"127.0.0.1\",
       \"port\": 8080,
@@ -160,55 +185,101 @@ if [ "${CDN_ENABLE:-false}" = "true" ]; then
     }"
 fi
 
+DIRECT_INBOUND=""
+if [ "${CDN_ONLY:-false}" != "true" ]; then
+  DIRECT_INBOUND="
+    {
+      \"listen\": \"0.0.0.0\",
+      \"port\": ${REALITY_PORT},
+      \"protocol\": \"vless\",
+      \"settings\": {
+        \"clients\": [${xray_clients}
+        ],
+        \"decryption\": \"none\"
+      },
+      \"streamSettings\": {
+        \"network\": \"raw\",
+        \"security\": \"reality\",
+        \"realitySettings\": {
+          \"show\": false,
+          \"target\": \"${REALITY_TARGET}\",
+          \"serverNames\": [\"${REALITY_SNI}\"],
+          \"privateKey\": \"${REALITY_PRIVATE}\",
+          \"shortIds\": [\"${REALITY_SHORTID}\"]
+        }
+      }
+    }"
+fi
+
+XRAY_INBOUNDS="$DIRECT_INBOUND"
+if [ -n "$CDN_INBOUND" ]; then
+  [ -n "$XRAY_INBOUNDS" ] && XRAY_INBOUNDS="$XRAY_INBOUNDS,"
+  XRAY_INBOUNDS="${XRAY_INBOUNDS}${CDN_INBOUND}"
+fi
+[ -n "$XRAY_INBOUNDS" ] || { echo "没有可用的 Xray 入站" >&2; exit 1; }
+
 sudo mkdir -p /usr/local/etc/xray
 sudo tee /usr/local/etc/xray/config.json > /dev/null <<JSON
 {
   "log": {"loglevel": "warning"},
-  "inbounds": [
-    {
-      "listen": "0.0.0.0",
-      "port": ${REALITY_PORT},
-      "protocol": "vless",
-      "settings": {
-        "clients": [${xray_clients}
-        ],
-        "decryption": "none"
-      },
-      "streamSettings": {
-        "network": "raw",
-        "security": "reality",
-        "realitySettings": {
-          "show": false,
-          "target": "${REALITY_TARGET}",
-          "serverNames": ["${REALITY_SNI}"],
-          "privateKey": "${REALITY_PRIVATE}",
-          "shortIds": ["${REALITY_SHORTID}"]
-        }
-      }
-    }${CDN_INBOUND}
+  "inbounds": [${XRAY_INBOUNDS}
   ],
   "outbounds": [{"protocol": "freedom"}]
 }
 JSON
 sudo chown root:xray /usr/local/etc/xray/config.json
 sudo chmod 640 /usr/local/etc/xray/config.json
+sudo /usr/local/bin/xray run -test -c /usr/local/etc/xray/config.json
 
 sudo mkdir -p /etc/hysteria
-if [ ! -f /etc/hysteria/cert.crt ] || [ ! -f /etc/hysteria/cert.key ]; then
-  sudo openssl ecparam -genkey -name prime256v1 -out /tmp/hy2.key >/dev/null 2>&1
-  sudo openssl req -new -x509 -days 3650 -key /tmp/hy2.key \
-    -out /etc/hysteria/cert.crt -subj "/CN=www.bing.com" >/dev/null 2>&1
-  sudo mv /tmp/hy2.key /etc/hysteria/cert.key
-fi
-sudo chown root:hysteria /etc/hysteria/cert.crt /etc/hysteria/cert.key
-sudo chmod 640 /etc/hysteria/cert.crt /etc/hysteria/cert.key
-
-sudo tee /etc/hysteria/config.yaml > /dev/null <<YAML
-listen: :${HY2_PORT}
-
+HY2_TLS_BLOCK=""
+HY2_ACME_BLOCK=""
+if [ "$HY2_ACME_ENABLE" = "true" ]; then
+  HY2_ACME_BLOCK="
+acme:
+  domains:
+    - ${HY2_ACME_DOMAIN}
+  email: ${HY2_ACME_EMAIL}
+  type: dns
+  dns:
+    name: cloudflare
+    config:
+      cloudflare_api_token: \"${HY2_ACME_DNS_TOKEN}\""
+else
+  if [ ! -f /etc/hysteria/cert.crt ] || [ ! -f /etc/hysteria/cert.key ]; then
+    sudo openssl ecparam -genkey -name prime256v1 -out /tmp/hy2.key >/dev/null 2>&1
+    sudo openssl req -new -x509 -days 3650 -key /tmp/hy2.key \
+      -out /etc/hysteria/cert.crt -subj "/CN=${HY2_SNI}" >/dev/null 2>&1
+    sudo mv /tmp/hy2.key /etc/hysteria/cert.key
+  fi
+  sudo chown root:hysteria /etc/hysteria/cert.crt /etc/hysteria/cert.key
+  sudo chmod 640 /etc/hysteria/cert.crt /etc/hysteria/cert.key
+  HY2_TLS_BLOCK="
 tls:
   cert: /etc/hysteria/cert.crt
-  key: /etc/hysteria/cert.key
+  key: /etc/hysteria/cert.key"
+fi
+
+HY2_LISTEN="${HY2_PORT}"
+HY2_CAPS="CAP_NET_BIND_SERVICE"
+if [ -n "$HY2_PORT_RANGE" ]; then
+  HY2_LISTEN="$HY2_PORT_RANGE"
+  HY2_CAPS="CAP_NET_BIND_SERVICE CAP_NET_ADMIN"
+fi
+HY2_OBFS_BLOCK=""
+if [ "${HY2_OBFS_ENABLE:-false}" = "true" ]; then
+  : "${HY2_OBFS_PASSWORD:?HY2_OBFS_ENABLE=true 但缺 HY2_OBFS_PASSWORD}"
+  HY2_OBFS_BLOCK="
+obfs:
+  type: salamander
+  salamander:
+    password: ${HY2_OBFS_PASSWORD}"
+fi
+
+sudo tee /etc/hysteria/config.yaml > /dev/null <<YAML
+listen: :${HY2_LISTEN}
+
+${HY2_TLS_BLOCK}${HY2_ACME_BLOCK}
 
 auth:
   type: userpass
@@ -217,8 +288,9 @@ auth:
 masquerade:
   type: proxy
   proxy:
-    url: https://www.bing.com
+    url: ${HY2_MASQUERADE_URL}
     rewriteHost: true
+${HY2_OBFS_BLOCK}
 YAML
 sudo chown root:hysteria /etc/hysteria/config.yaml
 sudo chmod 640 /etc/hysteria/config.yaml
@@ -269,7 +341,7 @@ ReadOnlyPaths=/usr/local/etc/xray
 WantedBy=multi-user.target
 UNIT
 
-sudo tee /etc/systemd/system/hysteria.service > /dev/null <<'UNIT'
+sudo tee /etc/systemd/system/hysteria.service > /dev/null <<UNIT
 [Unit]
 Description=Hysteria2 server
 After=network-online.target
@@ -284,8 +356,8 @@ Restart=on-failure
 RestartSec=5
 LimitNOFILE=1048576
 NoNewPrivileges=true
-AmbientCapabilities=CAP_NET_BIND_SERVICE
-CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+AmbientCapabilities=${HY2_CAPS}
+CapabilityBoundingSet=${HY2_CAPS}
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
@@ -351,11 +423,17 @@ else
   sudo rm -f /etc/systemd/system/cloudflared.service /etc/cloudflared/env
 fi
 
+PROXY_SERVICES="xray hysteria anytls"
+if [ "${CDN_ONLY:-false}" = "true" ]; then
+  sudo systemctl disable --now hysteria anytls >/dev/null 2>&1 || true
+  PROXY_SERVICES="xray"
+fi
+
 sudo systemctl daemon-reload
-sudo systemctl enable xray hysteria anytls $CDN_SERVICES
-sudo systemctl restart xray hysteria anytls $CDN_SERVICES
+sudo systemctl enable $PROXY_SERVICES $CDN_SERVICES
+sudo systemctl restart $PROXY_SERVICES $CDN_SERVICES
 sleep 2
-sudo systemctl is-active xray hysteria anytls $CDN_SERVICES || true
+sudo systemctl is-active $PROXY_SERVICES $CDN_SERVICES || true
 
 echo "=== [8/8] Hardening (SSH + auto-updates) ==="
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq unattended-upgrades

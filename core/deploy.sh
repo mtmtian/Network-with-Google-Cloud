@@ -6,7 +6,7 @@
 build_server_env() {
   local target="$1" k d
   {
-    for k in REALITY_PORT REALITY_TARGET REALITY_SNI DEVICES; do
+    for k in REALITY_PORT REALITY_TARGET REALITY_SNI DEVICES HY2_PORT_RANGE HY2_HOP_INTERVAL HY2_SNI HY2_OBFS_ENABLE HY2_MASQUERADE_URL HY2_ACME_ENABLE HY2_ACME_DOMAIN HY2_ACME_EMAIL HY2_ACME_DNS_PROVIDER XRAY_VERSION HYSTERIA_VERSION ANYTLS_VERSION CLOUDFLARED_VERSION; do
       printf "export %s='%s'\n" "$k" "$(varval "$k")"
     done
     for k in REALITY_SHORTID HY2_PORT ANYTLS_PORT ANYTLS_PASS; do
@@ -17,6 +17,13 @@ build_server_env() {
       printf "export HY2_PASS_%s='%s'\n" "$d" "$(secret_get "HY2_PASS_$d")"
     done
     printf "export CDN_ENABLE='%s'\n" "${CDN_ENABLE:-false}"
+    printf "export CDN_ONLY='%s'\n" "${CDN_ONLY:-false}"
+    if [ "${HY2_OBFS_ENABLE:-false}" = "true" ]; then
+      printf "export HY2_OBFS_PASSWORD='%s'\n" "$(secret_get HY2_OBFS_PASSWORD)"
+    fi
+    if [ "${HY2_ACME_ENABLE:-false}" = "true" ]; then
+      printf "export HY2_ACME_DNS_TOKEN='%s'\n" "$(secret_get HY2_ACME_DNS_TOKEN)"
+    fi
     if [ "${CDN_ENABLE:-false}" = "true" ]; then
       printf "export CDN_WS_PATH='%s'\n" "$(secret_get CDN_WS_PATH)"
       printf "export CF_TUNNEL_TOKEN='%s'\n" "$(secret_get CF_TUNNEL_TOKEN)"
@@ -45,6 +52,9 @@ run_deploy() {
   load_conf
   REALITY_TARGET="${REALITY_TARGET:-${REALITY_SNI}:443}"
   export REALITY_TARGET
+  if [ "${CDN_ONLY:-false}" = "true" ] && [ "${CDN_ENABLE:-false}" != "true" ]; then
+    die "CDN_ONLY=true 必须同时设置 CDN_ENABLE=true"
+  fi
   ok "$PROVIDER_DESCRIPTION  设备=[$DEVICES]"
 
   PROFILE_NAME="$PROFILE_NAME" \
@@ -87,9 +97,13 @@ run_deploy() {
 
   printf '\n\033[1;32m=== 部署完成 ===\033[0m\n'
   provider_print_summary
-  echo "  Reality   : TCP $REALITY_PORT"
-  echo "  Hysteria2 : UDP $HY2_PORT"
-  echo "  AnyTLS    : TCP $ANYTLS_PORT"
+  if [ "${CDN_ONLY:-false}" = "true" ]; then
+    echo "  直连端口  : 已关闭（CDN-only）"
+  else
+    echo "  Reality   : TCP $REALITY_PORT"
+    echo "  Hysteria2 : UDP $HY2_PORT"
+    echo "  AnyTLS    : TCP $ANYTLS_PORT"
+  fi
   if [ "${CDN_ENABLE:-false}" = "true" ]; then
     echo "  CDN       : $CDN_HOSTNAME"
   fi

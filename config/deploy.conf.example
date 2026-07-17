@@ -23,6 +23,20 @@ REALITY_SNI=
 HY2_PORT=
 ANYTLS_PORT=
 
+# Hysteria2 可选增强：端口跳跃 / QUIC 混淆。默认关闭，开启后需要重新生成并导入客户端 YAML。
+# HY2_PORT_RANGE=30000-30010
+# HY2_HOP_INTERVAL=15-30
+HY2_PORT_RANGE=
+HY2_HOP_INTERVAL=
+HY2_OBFS_ENABLE=false
+HY2_SNI=www.bing.com
+HY2_MASQUERADE_URL=https://www.bing.com
+# 可选：用 Cloudflare DNS-01 自动签发真实 HY2 证书；默认关闭，不影响现有自签名兼容路径。
+HY2_ACME_ENABLE=false
+HY2_ACME_DOMAIN=
+HY2_ACME_EMAIL=
+HY2_ACME_DNS_PROVIDER=cloudflare
+
 # Hysteria2 Brutal 拥塞控制（可选，跨太平洋提速核心）。
 # 同时填 UP/DOWN 才生效：客户端按固定带宽发送、无视丢包。务必填你实测速度的 ~80%，
 # 填太高会自伤丢包反而更慢；两者都留空 = Hysteria2 默认动态 CC（与历史行为一致）。
@@ -39,11 +53,19 @@ DEVICES="mac iphone"
 # → xray VLESS+WS(127.0.0.1:8080) → 直出。客户端只与 Cloudflare anycast IP 通信，
 # 真实 VM IP 对线路侧不可见。false 或缺 CF_API_TOKEN 时完全跳过，不影响其它三个节点。
 CDN_ENABLE=false
+# true 时只生成 Cloudflare WS 节点，并关闭直连代理端口；会失去原生 HY2/AnyTLS 直连能力。
+CDN_ONLY=false
 # CF 上指向本 tunnel 的子域（该域名需已托管在 Cloudflare）
 CDN_HOSTNAME=cdn2.example.com
 # 新建的独立 tunnel 名（与其它机器互不影响）
 CDN_TUNNEL_NAME=vpn-us-cdn
 # WebSocket 路径。留空 = 自动随机生成（写入 .secrets.env）
 CDN_WS_PATH=
+
+# 固定服务端组件版本，避免重跑时自动升级造成兼容性漂移。
+XRAY_VERSION=v26.3.27
+HYSTERIA_VERSION=app/v2.10.0
+ANYTLS_VERSION=0.0.13
+CLOUDFLARED_VERSION=2026.7.2
 # 注意：CF_API_TOKEN（建隧道用）与 CF_TUNNEL_TOKEN（cloudflared 连接用）属密钥，
 # 不写在本文件，只放 .secrets.env。首次运行会提示你把 CF_API_TOKEN 写进去。

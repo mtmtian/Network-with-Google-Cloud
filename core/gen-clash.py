@@ -41,16 +41,6 @@ env = {}
 env.update(load_kv(STATE_DIR / "deploy.conf"))
 env.update(load_kv(STATE_DIR / ".secrets.env"))
 
-REQUIRED = [
-    "STATIC_IP",
-    "REALITY_PORT", "REALITY_PUBLIC", "REALITY_SHORTID",
-    "HY2_PORT",
-    "ANYTLS_PORT", "ANYTLS_PASS",
-]
-missing = [k for k in REQUIRED if not env.get(k)]
-if missing:
-    sys.exit(f"ERROR: 缺少必要变量 {missing}（应由部署入口自动生成，请检查 .secrets.env）")
-
 devices = env.get("DEVICES", "mac iphone").split()
 
 # ── CDN 套娃出口（可选）──
@@ -59,7 +49,38 @@ devices = env.get("DEVICES", "mac iphone").split()
 # 关闭时所有 CDN 占位符为空，与历史行为完全一致（向后兼容）。
 CDN_HOSTNAME = env.get("CDN_HOSTNAME", "")
 CDN_WS_PATH = env.get("CDN_WS_PATH", "").lstrip("/")
+CDN_ONLY = env.get("CDN_ONLY", "false") == "true"
 cdn_on = env.get("CDN_ENABLE", "false") == "true" and bool(CDN_HOSTNAME) and bool(CDN_WS_PATH)
+if CDN_ONLY and not cdn_on:
+    sys.exit("ERROR: CDN_ONLY=true 但 CDN_ENABLE/CDN_HOSTNAME/CDN_WS_PATH 不完整")
+
+required = ["DEVICES"]
+if not CDN_ONLY:
+    required += [
+        "STATIC_IP",
+        "REALITY_PORT", "REALITY_PUBLIC", "REALITY_SHORTID",
+        "HY2_PORT",
+        "ANYTLS_PORT", "ANYTLS_PASS",
+    ]
+else:
+    required += ["CDN_HOSTNAME", "CDN_WS_PATH"]
+missing = [k for k in required if not env.get(k)]
+if missing:
+    sys.exit(f"ERROR: 缺少必要变量 {missing}（应由部署入口自动生成，请检查 profile 状态）")
+
+HY2_PORT_RANGE = env.get("HY2_PORT_RANGE", "").strip()
+HY2_HOP_INTERVAL = env.get("HY2_HOP_INTERVAL", "").strip()
+HY2_SNI = env.get("HY2_SNI", "www.bing.com").strip() or "www.bing.com"
+HY2_ACME_ENABLE = env.get("HY2_ACME_ENABLE", "false") == "true"
+HY2_ACME_DOMAIN = env.get("HY2_ACME_DOMAIN", "").strip()
+if HY2_ACME_ENABLE and not HY2_ACME_DOMAIN:
+    sys.exit("ERROR: HY2_ACME_ENABLE=true 但缺少 HY2_ACME_DOMAIN")
+HY2_CLIENT_SNI = HY2_ACME_DOMAIN if HY2_ACME_ENABLE else HY2_SNI
+HY2_SKIP_CERT_VERIFY = "false" if HY2_ACME_ENABLE else "true"
+HY2_OBFS_ENABLE = env.get("HY2_OBFS_ENABLE", "false") == "true"
+HY2_OBFS_PASSWORD = env.get("HY2_OBFS_PASSWORD", "").strip()
+if HY2_OBFS_ENABLE and not HY2_OBFS_PASSWORD:
+    sys.exit("ERROR: HY2_OBFS_ENABLE=true 但缺少 HY2_OBFS_PASSWORD")
 CDN_REF = '\n      - "US-CDN"' if cdn_on else ""
 
 # ── Hysteria2 Brutal 拥塞控制（可选）──
@@ -93,8 +114,68 @@ def cdn_proxy_block(dev_cdn_uuid):
         f"        Host: {CDN_HOSTNAME}\n"
     )
 
+
+def node_ref_block(names):
+    return "\n".join(f'      - "{name}"' for name in names)
+
+
+def direct_proxy_blocks(dev_uuid, hy2_password):
+    if CDN_ONLY:
+        return "", "", ""
+
+    hy2_port = (
+        f"    ports: {HY2_PORT_RANGE}\n"
+        if HY2_PORT_RANGE
+        else f"    port: {env['HY2_PORT']}\n"
+    )
+    hy2_hop = f"    hop-interval: {HY2_HOP_INTERVAL}\n" if HY2_HOP_INTERVAL else ""
+    hy2_obfs = ""
+    if HY2_OBFS_ENABLE:
+        hy2_obfs = (
+            "    obfs: salamander\n"
+            f"    obfs-password: {HY2_OBFS_PASSWORD}\n"
+        )
+
+    reality = f'''  - name: "US-Reality"
+    type: vless
+    server: {env['STATIC_IP']}
+    port: {env['REALITY_PORT']}
+    uuid: {dev_uuid}
+    network: tcp
+    tls: true
+    udp: true
+    flow: xtls-rprx-vision
+    servername: "{env.get('REALITY_SNI', '')}"
+    sni: "{env.get('REALITY_SNI', '')}"
+    client-fingerprint: chrome
+    reality-opts:
+      public-key: {env['REALITY_PUBLIC']}
+      short-id: "{env['REALITY_SHORTID']}"
+'''
+    hy2 = f'''  - name: "US-HY2"
+    type: hysteria2
+    server: {env['STATIC_IP']}
+{hy2_port}    password: "{hy2_password}"
+    auth: "{hy2_password}"
+    sni: {HY2_CLIENT_SNI}
+    skip-cert-verify: {HY2_SKIP_CERT_VERIFY}
+    alpn:
+      - h3
+{HY2_BW}{hy2_hop}{hy2_obfs}'''
+    anytls = f'''  - name: "US-AnyTLS"
+    type: anytls
+    server: {env['STATIC_IP']}
+    port: {env['ANYTLS_PORT']}
+    password: "{env['ANYTLS_PASS']}"
+    sni: {HY2_CLIENT_SNI}
+    skip-cert-verify: {HY2_SKIP_CERT_VERIFY}
+    client-fingerprint: chrome
+    udp: true
+'''
+    return reality, hy2, anytls
+
 TEMPLATE = """# Clash.Meta / Mihomo config — device: {DEVICE}
-# Server: {STATIC_IP}  |  primary: VLESS+Reality:{REALITY_PORT}  |  fallback: Hysteria2:{HY2_PORT}/udp, AnyTLS:{ANYTLS_PORT}/tcp
+# Server: {SERVER_LABEL}
 
 mixed-port: 7890
 allow-lan: false
@@ -170,53 +251,24 @@ dns:
       - 240.0.0.0/4
 
 proxies:
-  - name: "US-Reality"
-    type: vless
-    server: {STATIC_IP}
-    port: {REALITY_PORT}
-    uuid: {DEV_UUID}
-    network: tcp
-    tls: true
-    udp: true
-    flow: xtls-rprx-vision
-    servername: "{REALITY_SNI}"
-    sni: "{REALITY_SNI}"
-    client-fingerprint: chrome
-    reality-opts:
-      public-key: {REALITY_PUBLIC}
-      short-id: "{REALITY_SHORTID}"
-
-  - name: "US-HY2"
-    type: hysteria2
-    server: {STATIC_IP}
-    port: {HY2_PORT}
-    password: "{HY2_PASSWORD}"
-    auth: "{HY2_PASSWORD}"
-    sni: www.bing.com
-    skip-cert-verify: true
-    alpn:
-      - h3
-{HY2_BW}
-  - name: "US-AnyTLS"
-    type: anytls
-    server: {STATIC_IP}
-    port: {ANYTLS_PORT}
-    password: "{ANYTLS_PASS}"
-    sni: www.bing.com
-    skip-cert-verify: true
-    client-fingerprint: chrome
-    udp: true
+{REALITY_PROXY}{HY2_PROXY}{ANYTLS_PROXY}
 {CDN_PROXY}
 proxy-groups:
   - name: "🚀 代理策略"
     type: select
     proxies:
-      - "US-Reality"
-      - "US-HY2"
+      - "🛟 自动故障切换"
       - "⚡ 自动测速"
       - "🔧 手动选择"{CDN_REF}
-      - "US-AnyTLS"
       - DIRECT
+
+  - name: "🛟 自动故障切换"
+    type: fallback
+    lazy: true
+    url: https://www.gstatic.com/generate_204
+    interval: 300
+    proxies:
+{FALLBACK_PROXIES}
 
   - name: "⚡ 自动测速"
     type: url-test
@@ -224,17 +276,13 @@ proxy-groups:
     url: https://www.gstatic.com/generate_204
     interval: 600
     tolerance: 150
-    proxies:{CDN_REF}
-      - "US-Reality"
-      - "US-HY2"
-      - "US-AnyTLS"
+    proxies:
+{AUTO_PROXIES}
 
   - name: "🔧 手动选择"
     type: select
-    proxies:{CDN_REF}
-      - "US-Reality"
-      - "US-HY2"
-      - "US-AnyTLS"
+    proxies:
+{MANUAL_PROXIES}
       - DIRECT
 
   - name: "🌐 代理流量"
@@ -242,10 +290,8 @@ proxy-groups:
     proxies:
       - "🚀 代理策略"
       - "⚡ 自动测速"
-      - "🔧 手动选择"{CDN_REF}
-      - "US-Reality"
-      - "US-HY2"
-      - "US-AnyTLS"
+      - "🔧 手动选择"
+{ALL_PROXIES}
       - DIRECT
 
   - name: "↪️ 直连流量"
@@ -463,18 +509,41 @@ for stale in OUT_DIR.glob(stale_pattern):
 for dev in devices:
     uuid = env.get(f"REALITY_UUID_{dev}")
     hy2pw = env.get(f"HY2_PASS_{dev}")
-    if not uuid or not hy2pw:
+    if not CDN_ONLY and (not uuid or not hy2pw):
         sys.exit(f"ERROR: 设备 {dev} 缺少 REALITY_UUID_{dev} / HY2_PASS_{dev}")
     dev_cdn_uuid = env.get(f"CDN_UUID_{dev}", "")
     if cdn_on and not dev_cdn_uuid:
         sys.exit(f"ERROR: CDN_ENABLE=true 但设备 {dev} 缺少 CDN_UUID_{dev}")
+
+    reality_proxy, hy2_proxy, anytls_proxy = direct_proxy_blocks(
+        uuid or "", f"{dev}:{hy2pw}" if hy2pw else ""
+    )
+    direct_nodes = [] if CDN_ONLY else ["US-Reality", "US-HY2", "US-AnyTLS"]
+    fallback_nodes = direct_nodes[:1]
+    if cdn_on:
+        fallback_nodes.append("US-CDN")
+    fallback_nodes.extend(direct_nodes[1:])
+    all_nodes = (["US-CDN"] if cdn_on else []) + direct_nodes
+    if not fallback_nodes:
+        sys.exit("ERROR: 没有可用的代理节点")
+
     yaml = TEMPLATE.format(
         DEVICE=dev,
-        DEV_UUID=uuid,
-        HY2_PASSWORD=f"{dev}:{hy2pw}",
+        SERVER_LABEL=(
+            f"{env['STATIC_IP']} | primary: VLESS+Reality:{env['REALITY_PORT']} | "
+            f"fallback: Hysteria2:{env['HY2_PORT']}/udp, AnyTLS:{env['ANYTLS_PORT']}/tcp"
+            if not CDN_ONLY
+            else "Cloudflare Tunnel only"
+        ),
+        REALITY_PROXY=reality_proxy,
+        HY2_PROXY=hy2_proxy,
+        ANYTLS_PROXY=anytls_proxy,
         CDN_PROXY=cdn_proxy_block(dev_cdn_uuid),
         CDN_REF=CDN_REF,
-        HY2_BW=HY2_BW,
+        FALLBACK_PROXIES=node_ref_block(fallback_nodes),
+        AUTO_PROXIES=node_ref_block(fallback_nodes),
+        MANUAL_PROXIES=node_ref_block(all_nodes),
+        ALL_PROXIES=node_ref_block(all_nodes),
         **env,
     )
     filename = f"{PROFILE}-{dev}.yaml" if PROFILE else f"{dev}.yaml"

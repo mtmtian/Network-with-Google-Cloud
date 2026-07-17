@@ -70,6 +70,81 @@ class GenerateClashConfigTest(unittest.TestCase):
             self.assertIn('name: "US-AnyTLS"', mac)
             self.assertIn("test-hy2-mac", mac)
             self.assertNotIn("test-hy2-phone", mac)
+            self.assertIn('name: "🛟 自动故障切换"', mac)
+            self.assertIn("type: fallback", mac)
+            self.assertIn('      - "US-Reality"', mac)
+
+    def test_cdn_only_config_omits_direct_ip_nodes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            (root / "deploy.conf").write_text(
+                "REALITY_PORT=443\nREALITY_TARGET=1.1.1.1:443\nREALITY_SNI=\n"
+                "DEVICES=mac\nCDN_ENABLE=true\nCDN_ONLY=true\n"
+                "CDN_HOSTNAME=cdn.example.com\n"
+            )
+            (root / ".secrets.env").write_text(
+                "STATIC_IP=203.0.113.10\nREALITY_PUBLIC=test-public-key\n"
+                "REALITY_SHORTID=0123456789abcdef\nHY2_PORT=31000\n"
+                "ANYTLS_PORT=21000\nANYTLS_PASS=test-anytls-pass\n"
+                "REALITY_UUID_mac=00000000-0000-4000-8000-000000000001\n"
+                "HY2_PASS_mac=test-hy2-mac\nCDN_WS_PATH=private-path\n"
+                "CDN_UUID_mac=00000000-0000-4000-8000-000000000003\n"
+            )
+            env = os.environ.copy()
+            env["NETWORK_NODE_ROOT"] = str(root)
+            env["NETWORK_NODE_STATE_DIR"] = str(root)
+            env["NETWORK_NODE_PROFILE"] = "test"
+            result = subprocess.run(
+                [sys.executable, str(GENERATOR)],
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            config = (root / "clash-configs" / "test-mac.yaml").read_text()
+            self.assertIn('name: "US-CDN"', config)
+            self.assertNotIn('name: "US-Reality"', config)
+            self.assertNotIn('name: "US-HY2"', config)
+            self.assertNotIn('name: "US-AnyTLS"', config)
+            self.assertNotIn("203.0.113.10", config)
+
+    def test_hysteria_optional_obfuscation_and_port_hopping_are_rendered(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            (root / "deploy.conf").write_text(
+                "REALITY_PORT=443\nREALITY_TARGET=1.1.1.1:443\nREALITY_SNI=\n"
+                "DEVICES=mac\nCDN_ENABLE=false\nHY2_PORT_RANGE=30000-30010\n"
+                "HY2_HOP_INTERVAL=15-30\nHY2_OBFS_ENABLE=true\n"
+                "HY2_ACME_ENABLE=true\nHY2_ACME_DOMAIN=hy2.example.com\n"
+            )
+            (root / ".secrets.env").write_text(
+                "STATIC_IP=203.0.113.10\nREALITY_PUBLIC=test-public-key\n"
+                "REALITY_SHORTID=0123456789abcdef\nHY2_PORT=31000\n"
+                "ANYTLS_PORT=21000\nANYTLS_PASS=test-anytls-pass\n"
+                "REALITY_UUID_mac=00000000-0000-4000-8000-000000000001\n"
+                "HY2_PASS_mac=test-hy2-mac\nHY2_OBFS_PASSWORD=test-obfs\n"
+            )
+            env = os.environ.copy()
+            env["NETWORK_NODE_ROOT"] = str(root)
+            env["NETWORK_NODE_STATE_DIR"] = str(root)
+            env["NETWORK_NODE_PROFILE"] = "test"
+            result = subprocess.run(
+                [sys.executable, str(GENERATOR)],
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            config = (root / "clash-configs" / "test-mac.yaml").read_text()
+            self.assertIn("server: 203.0.113.10", config)
+            self.assertIn("ports: 30000-30010", config)
+            self.assertIn("obfs: salamander", config)
+            self.assertIn("obfs-password: test-obfs", config)
+            self.assertIn("hop-interval: 15-30", config)
+            self.assertIn("sni: hy2.example.com", config)
+            self.assertIn("skip-cert-verify: false", config)
 
     def test_only_replaces_yaml_for_the_active_profile(self):
         with tempfile.TemporaryDirectory() as tmp:

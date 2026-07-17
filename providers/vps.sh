@@ -75,14 +75,20 @@ REMOTE_BOOTSTRAP
   setkv STATIC_IP "$VPS_HOST"
   say "配置 VPS 防火墙"
   ssh "${VPS_SSH_OPTS[@]}" "${VPS_ADMIN_USER}@${VPS_HOST}" \
-    "SSH_PORT='$VPS_SSH_PORT' REALITY_PORT='$REALITY_PORT' HY2_PORT='$HY2_PORT' ANYTLS_PORT='$ANYTLS_PORT' bash -s" <<'REMOTE_FIREWALL'
+    "SSH_PORT='$VPS_SSH_PORT' REALITY_PORT='$REALITY_PORT' HY2_PORT='$HY2_PORT' HY2_PORT_RANGE='${HY2_PORT_RANGE:-}' ANYTLS_PORT='$ANYTLS_PORT' CDN_ONLY='${CDN_ONLY:-false}' bash -s" <<'REMOTE_FIREWALL'
 set -euo pipefail
 sudo ufw default deny incoming >/dev/null
 sudo ufw default allow outgoing >/dev/null
 sudo ufw allow "${SSH_PORT}/tcp" >/dev/null
-sudo ufw allow "${REALITY_PORT}/tcp" >/dev/null
-sudo ufw allow "${HY2_PORT}/udp" >/dev/null
-sudo ufw allow "${ANYTLS_PORT}/tcp" >/dev/null
+if [ "${CDN_ONLY}" = "true" ]; then
+  sudo ufw delete allow "${REALITY_PORT}/tcp" >/dev/null 2>&1 || true
+  sudo ufw delete allow "${HY2_PORT_RANGE:-${HY2_PORT}}/udp" >/dev/null 2>&1 || true
+  sudo ufw delete allow "${ANYTLS_PORT}/tcp" >/dev/null 2>&1 || true
+else
+  sudo ufw allow "${REALITY_PORT}/tcp" >/dev/null
+  sudo ufw allow "${HY2_PORT_RANGE:-${HY2_PORT}}/udp" >/dev/null
+  sudo ufw allow "${ANYTLS_PORT}/tcp" >/dev/null
+fi
 sudo ufw --force enable >/dev/null
 REMOTE_FIREWALL
 }

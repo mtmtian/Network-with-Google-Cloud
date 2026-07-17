@@ -71,4 +71,12 @@ if [ "${CDN_ENABLE:-false}" = "true" ]; then
   fi
 fi
 
+if [ "${HY2_OBFS_ENABLE:-false}" = "true" ]; then
+  ensure_secret HY2_OBFS_PASSWORD "$(rand_psk)"
+fi
+
+if [ "${HY2_ACME_ENABLE:-false}" = "true" ] && [ -z "$(secret_get HY2_ACME_DNS_TOKEN)" ]; then
+  warn "HY2_ACME_ENABLE=true 但缺 HY2_ACME_DNS_TOKEN；请把 Cloudflare DNS API token 写入 .secrets.env 后重跑"
+fi
+
 ok "密钥就绪（已写入 .secrets.env）"
