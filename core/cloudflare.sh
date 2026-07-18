@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 幂等地在 Cloudflare 上为本 VM 建一条独立 Tunnel + 配 ingress + DNS，
 # 并把 cloudflared 的 connector token 写入 .secrets.env（CF_TUNNEL_TOKEN）。
-# 需要 .secrets.env 里有 CF_API_TOKEN（权限 Account>Cloudflare Tunnel:Edit + Zone>DNS:Edit）。
+# 需要 .secrets.env 里有 CF_API_TOKEN（权限 Account>Cloudflare Tunnel:Edit + Zone>Zone:Read + Zone>DNS:Edit）。
 # 仅在 CDN_ENABLE=true 时由共享部署流水线调用。
 set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -15,6 +15,8 @@ load_secrets
 : "${CDN_TUNNEL_NAME:=vpn-us-cdn}"
 CF_API_TOKEN="$(secret_get CF_API_TOKEN)"
 [ -n "$CF_API_TOKEN" ] || die "缺 CF_API_TOKEN，请写入 .secrets.env（见 secrets.sh 提示）后重跑"
+command -v curl >/dev/null 2>&1 || die "缺少 curl，无法调用 Cloudflare API"
+command -v python3 >/dev/null 2>&1 || die "缺少 python3，无法解析 Cloudflare API 响应"
 
 API="https://api.cloudflare.com/client/v4"
 
@@ -24,10 +26,12 @@ cf_api() {
   for attempt in 1 2 3; do
     if [ -n "$body" ]; then
       resp="$(curl -sS -w $'\n%{http_code}' -X "$method" "$API$path" \
+        --connect-timeout 15 --max-time 60 \
         -H "Authorization: Bearer $CF_API_TOKEN" \
         -H "Content-Type: application/json" --data "$body" 2>/dev/null || true)"
     else
       resp="$(curl -sS -w $'\n%{http_code}' -X "$method" "$API$path" \
+        --connect-timeout 15 --max-time 60 \
         -H "Authorization: Bearer $CF_API_TOKEN" 2>/dev/null || true)"
     fi
     http="${resp##*$'\n'}"; resp="${resp%$'\n'*}"
@@ -70,7 +74,7 @@ ok "zone=$ZONE_NAME  account=$ACCOUNT_ID"
 
 say "[CF 2/5] 建/复用 Tunnel：$CDN_TUNNEL_NAME"
 LIST_JSON="$(cf_api GET "/accounts/$ACCOUNT_ID/cfd_tunnel?name=$CDN_TUNNEL_NAME&is_deleted=false")"
-TUNNEL_ID="$(printf '%s' "$LIST_JSON" | jget '["result"][0]["id"]')"
+TUNNEL_ID="$(printf '%s' "$LIST_JSON" | jget '["result"][0]["id"]' || true)"
 if [ -z "$TUNNEL_ID" ] || [ "$TUNNEL_ID" = "None" ]; then
   CREATE_JSON="$(cf_api POST "/accounts/$ACCOUNT_ID/cfd_tunnel" \
     "{\"name\":\"$CDN_TUNNEL_NAME\",\"config_src\":\"cloudflare\"}")"
@@ -88,7 +92,7 @@ ok "ingress 已设置"
 
 say "[CF 4/5] 配置 DNS：$CDN_HOSTNAME CNAME -> $TUNNEL_ID.cfargotunnel.com (proxied)"
 DNS_JSON="$(cf_api GET "/zones/$ZONE_ID/dns_records?type=CNAME&name=$CDN_HOSTNAME")"
-REC_ID="$(printf '%s' "$DNS_JSON" | jget '["result"][0]["id"]')"
+REC_ID="$(printf '%s' "$DNS_JSON" | jget '["result"][0]["id"]' || true)"
 DNS_BODY="{\"type\":\"CNAME\",\"name\":\"$CDN_HOSTNAME\",\"content\":\"$TUNNEL_ID.cfargotunnel.com\",\"proxied\":true}"
 if [ -z "$REC_ID" ] || [ "$REC_ID" = "None" ]; then
   cf_api POST "/zones/$ZONE_ID/dns_records" "$DNS_BODY" >/dev/null
@@ -100,7 +104,7 @@ fi
 
 say "[CF 5/5] 取 connector token 写入 .secrets.env"
 TOKEN_JSON="$(cf_api GET "/accounts/$ACCOUNT_ID/cfd_tunnel/$TUNNEL_ID/token")"
-CONNECTOR_TOKEN="$(printf '%s' "$TOKEN_JSON" | jget '["result"]')"
+CONNECTOR_TOKEN="$(printf '%s' "$TOKEN_JSON" | jget '["result"]' || true)"
 [ -n "$CONNECTOR_TOKEN" ] && [ "$CONNECTOR_TOKEN" != "None" ] || die "未取得 connector token"
 setkv CF_TUNNEL_TOKEN "$CONNECTOR_TOKEN"
 setkv CDN_TUNNEL_ID "$TUNNEL_ID"

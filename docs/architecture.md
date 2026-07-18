@@ -26,9 +26,16 @@ The shared pipeline owns key generation, optional Cloudflare setup, server-envir
 ## Data flow
 
 ```text
-entry point -> provider adapter -> shared secrets -> provider host setup
-            -> shared server install -> shared client config generation
+entry point -> provider adapter preflight/config
+            -> shared secrets -> optional Cloudflare API setup
+            -> provider host setup -> shared server install
+            -> shared client config generation
 ```
+
+Cloudflare setup runs before host changes when `CDN_ENABLE=true`. This makes missing
+API tokens, permissions, or DNS access fail locally before the VPS firewall or services
+are changed. The host installer receives only the generated connector token; the API
+token used to manage Cloudflare remains local.
 
 Provider state is isolated below `profiles/`:
 

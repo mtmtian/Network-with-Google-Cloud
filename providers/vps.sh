@@ -15,8 +15,8 @@ provider_init() {
   else
     VPS_SSH_KEY="${VPS_SSH_KEY:-$HOME/.ssh/id_ed25519}"
   fi
-  VPS_SSH_OPTS=(-i "$VPS_SSH_KEY" -p "$VPS_SSH_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10)
-  VPS_SCP_OPTS=(-i "$VPS_SSH_KEY" -P "$VPS_SSH_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10)
+  VPS_SSH_OPTS=(-i "$VPS_SSH_KEY" -p "$VPS_SSH_PORT" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
+  VPS_SCP_OPTS=(-i "$VPS_SSH_KEY" -P "$VPS_SSH_PORT" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
 }
 
 provider_preflight() {
@@ -75,14 +75,26 @@ REMOTE_BOOTSTRAP
   setkv STATIC_IP "$VPS_HOST"
   say "配置 VPS 防火墙"
   ssh "${VPS_SSH_OPTS[@]}" "${VPS_ADMIN_USER}@${VPS_HOST}" \
-    "SSH_PORT='$VPS_SSH_PORT' REALITY_PORT='$REALITY_PORT' HY2_PORT='$HY2_PORT' ANYTLS_PORT='$ANYTLS_PORT' bash -s" <<'REMOTE_FIREWALL'
+    "SSH_PORT='$VPS_SSH_PORT' REALITY_PORT='$REALITY_PORT' HY2_PORT='$HY2_PORT' HY2_PORT_RANGE='${HY2_PORT_RANGE:-}' ANYTLS_PORT='$ANYTLS_PORT' WARP_ENABLE='${WARP_ENABLE:-false}' WARP_REALITY_PORT='${WARP_REALITY_PORT:-}' CDN_ONLY='${CDN_ONLY:-false}' bash -s" <<'REMOTE_FIREWALL'
 set -euo pipefail
 sudo ufw default deny incoming >/dev/null
 sudo ufw default allow outgoing >/dev/null
 sudo ufw allow "${SSH_PORT}/tcp" >/dev/null
-sudo ufw allow "${REALITY_PORT}/tcp" >/dev/null
-sudo ufw allow "${HY2_PORT}/udp" >/dev/null
-sudo ufw allow "${ANYTLS_PORT}/tcp" >/dev/null
+if [ "${CDN_ONLY}" = "true" ]; then
+  sudo ufw delete allow "${REALITY_PORT}/tcp" >/dev/null 2>&1 || true
+  sudo ufw delete allow "${HY2_PORT_RANGE:-${HY2_PORT}}/udp" >/dev/null 2>&1 || true
+  sudo ufw delete allow "${ANYTLS_PORT}/tcp" >/dev/null 2>&1 || true
+  [ -n "${WARP_REALITY_PORT}" ] && sudo ufw delete allow "${WARP_REALITY_PORT}/tcp" >/dev/null 2>&1 || true
+else
+  sudo ufw allow "${REALITY_PORT}/tcp" >/dev/null
+  sudo ufw allow "${HY2_PORT_RANGE:-${HY2_PORT}}/udp" >/dev/null
+  sudo ufw allow "${ANYTLS_PORT}/tcp" >/dev/null
+  if [ "${WARP_ENABLE}" = "true" ]; then
+    sudo ufw allow "${WARP_REALITY_PORT}/tcp" >/dev/null
+  else
+    [ -n "${WARP_REALITY_PORT}" ] && sudo ufw delete allow "${WARP_REALITY_PORT}/tcp" >/dev/null 2>&1 || true
+  fi
+fi
 sudo ufw --force enable >/dev/null
 REMOTE_FIREWALL
 }

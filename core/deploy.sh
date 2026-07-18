@@ -5,23 +5,32 @@
 
 build_server_env() {
   local target="$1" k d
+  export_var() { printf 'export %s=%q\n' "$1" "$2"; }
   {
-    for k in REALITY_PORT REALITY_TARGET REALITY_SNI DEVICES; do
-      printf "export %s='%s'\n" "$k" "$(varval "$k")"
+    for k in REALITY_PORT REALITY_TARGET REALITY_SNI DEVICES HY2_PORT_RANGE HY2_HOP_INTERVAL HY2_SNI HY2_OBFS_ENABLE HY2_MASQUERADE_URL HY2_ACME_ENABLE HY2_ACME_DOMAIN HY2_ACME_EMAIL HY2_ACME_DNS_PROVIDER WARP_ENABLE WARP_SOCKS_PORT XRAY_VERSION HYSTERIA_VERSION ANYTLS_VERSION CLOUDFLARED_VERSION; do
+      export_var "$k" "$(varval "$k")"
     done
-    for k in REALITY_SHORTID HY2_PORT ANYTLS_PORT ANYTLS_PASS; do
-      printf "export %s='%s'\n" "$k" "$(secret_get "$k")"
+    for k in REALITY_SHORTID HY2_PORT ANYTLS_PORT ANYTLS_PASS WARP_REALITY_PORT; do
+      export_var "$k" "$(secret_get "$k")"
     done
     for d in $DEVICES; do
-      printf "export REALITY_UUID_%s='%s'\n" "$d" "$(secret_get "REALITY_UUID_$d")"
-      printf "export HY2_PASS_%s='%s'\n" "$d" "$(secret_get "HY2_PASS_$d")"
+      export_var "REALITY_UUID_$d" "$(secret_get "REALITY_UUID_$d")"
+      export_var "HY2_PASS_$d" "$(secret_get "HY2_PASS_$d")"
+      export_var "WARP_REALITY_UUID_$d" "$(secret_get "WARP_REALITY_UUID_$d")"
     done
-    printf "export CDN_ENABLE='%s'\n" "${CDN_ENABLE:-false}"
+    export_var CDN_ENABLE "${CDN_ENABLE:-false}"
+    export_var CDN_ONLY "${CDN_ONLY:-false}"
+    if [ "${HY2_OBFS_ENABLE:-false}" = "true" ]; then
+      export_var HY2_OBFS_PASSWORD "$(secret_get HY2_OBFS_PASSWORD)"
+    fi
+    if [ "${HY2_ACME_ENABLE:-false}" = "true" ]; then
+      export_var HY2_ACME_DNS_TOKEN "$(secret_get HY2_ACME_DNS_TOKEN)"
+    fi
     if [ "${CDN_ENABLE:-false}" = "true" ]; then
-      printf "export CDN_WS_PATH='%s'\n" "$(secret_get CDN_WS_PATH)"
-      printf "export CF_TUNNEL_TOKEN='%s'\n" "$(secret_get CF_TUNNEL_TOKEN)"
+      export_var CDN_WS_PATH "$(secret_get CDN_WS_PATH)"
+      export_var CF_TUNNEL_TOKEN "$(secret_get CF_TUNNEL_TOKEN)"
       for d in $DEVICES; do
-        printf "export CDN_UUID_%s='%s'\n" "$d" "$(secret_get "CDN_UUID_$d")"
+        export_var "CDN_UUID_$d" "$(secret_get "CDN_UUID_$d")"
       done
     fi
   } > "$target"
@@ -45,6 +54,12 @@ run_deploy() {
   load_conf
   REALITY_TARGET="${REALITY_TARGET:-${REALITY_SNI}:443}"
   export REALITY_TARGET
+  if [ "${CDN_ONLY:-false}" = "true" ] && [ "${CDN_ENABLE:-false}" != "true" ]; then
+    die "CDN_ONLY=true 必须同时设置 CDN_ENABLE=true"
+  fi
+  if [ "${WARP_ENABLE:-false}" = "true" ] && [ "${CDN_ONLY:-false}" = "true" ]; then
+    die "WARP_ENABLE=true 不能与 CDN_ONLY=true 同时使用（会重新暴露 VPS 入口）"
+  fi
   ok "$PROVIDER_DESCRIPTION  设备=[$DEVICES]"
 
   PROFILE_NAME="$PROFILE_NAME" \
@@ -52,13 +67,17 @@ run_deploy() {
     bash "$PROJECT_DIR/core/secrets.sh"
   load_secrets
 
-  provider_provision
-  load_secrets
-
+  # Cloudflare setup is local/API-only. Do it before touching the host so a
+  # missing permission or unreachable API cannot leave a half-updated server.
   if [ "${CDN_ENABLE:-false}" = "true" ]; then
-    bash "$PROJECT_DIR/core/cloudflare.sh"
+    PROFILE_NAME="$PROFILE_NAME" \
+      NETWORK_NODE_STATE_DIR="$STATE_DIR" \
+      bash "$PROJECT_DIR/core/cloudflare.sh"
     load_secrets
   fi
+
+  provider_provision
+  load_secrets
 
   local srv_env srv_out rc pub
   DEPLOY_TMP_DIR="$(mktemp -d)"
@@ -87,9 +106,16 @@ run_deploy() {
 
   printf '\n\033[1;32m=== 部署完成 ===\033[0m\n'
   provider_print_summary
-  echo "  Reality   : TCP $REALITY_PORT"
-  echo "  Hysteria2 : UDP $HY2_PORT"
-  echo "  AnyTLS    : TCP $ANYTLS_PORT"
+  if [ "${CDN_ONLY:-false}" = "true" ]; then
+    echo "  直连端口  : 已关闭（CDN-only）"
+  else
+    echo "  Reality   : TCP $REALITY_PORT"
+    if [ "${WARP_ENABLE:-false}" = "true" ]; then
+      echo "  Reality-WARP: TCP $WARP_REALITY_PORT"
+    fi
+    echo "  Hysteria2 : UDP $HY2_PORT"
+    echo "  AnyTLS    : TCP $ANYTLS_PORT"
+  fi
   if [ "${CDN_ENABLE:-false}" = "true" ]; then
     echo "  CDN       : $CDN_HOSTNAME"
   fi
