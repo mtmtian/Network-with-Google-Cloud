@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import pathlib
+import os
 import shlex
 import shutil
 import subprocess
@@ -113,6 +114,73 @@ class DeployOutputTest(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+
+    def test_server_env_includes_optional_warp_settings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            state = root / "state"
+            state.mkdir()
+            command = textwrap.dedent(
+                f"""
+                set -euo pipefail
+                PROJECT_DIR={shlex.quote(str(PROJECT_ROOT))}
+                PROFILE_NAME=test
+                NETWORK_NODE_STATE_DIR={shlex.quote(str(state))}
+                . "$PROJECT_DIR/core/common.sh"
+                . "$PROJECT_DIR/core/deploy.sh"
+                DEVICES=mac
+                WARP_ENABLE=true
+                WARP_SOCKS_PORT=40000
+                setkv WARP_REALITY_PORT 42000
+                setkv WARP_REALITY_UUID_mac 00000000-0000-4000-8000-000000000004
+                target={shlex.quote(str(root / 'server-env.sh'))}
+                build_server_env "$target"
+                unset WARP_ENABLE WARP_SOCKS_PORT WARP_REALITY_PORT WARP_REALITY_UUID_mac
+                . "$target"
+                test "$WARP_ENABLE" = true
+                test "$WARP_SOCKS_PORT" = 40000
+                test "$WARP_REALITY_PORT" = 42000
+                test "$WARP_REALITY_UUID_mac" = 00000000-0000-4000-8000-000000000004
+                """
+            )
+            result = subprocess.run(
+                ["bash", "-c", command],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+
+    def test_secret_generation_creates_warp_credentials_when_enabled(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            state = root / "state"
+            state.mkdir()
+            (state / "deploy.conf").write_text("DEVICES=mac\nWARP_ENABLE=true\n")
+            env = os.environ.copy()
+            env["PROJECT_DIR"] = str(PROJECT_ROOT)
+            env["PROFILE_NAME"] = "test"
+            env["NETWORK_NODE_STATE_DIR"] = str(state)
+            result = subprocess.run(
+                ["bash", str(PROJECT_ROOT / "core" / "secrets.sh")],
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            secrets = (state / ".secrets.env").read_text()
+            self.assertRegex(secrets, r"(?m)^WARP_REALITY_PORT=4[0-9]{4}$")
+            self.assertRegex(
+                secrets,
+                r"(?m)^WARP_REALITY_UUID_mac=[0-9a-f-]{36}$",
+            )
+
+    def test_server_setup_contains_opt_in_warp_outbound_contract(self):
+        setup = (PROJECT_ROOT / "core" / "setup-server.sh").read_text()
+        self.assertIn("warp-cli --accept-tos mode proxy", setup)
+        self.assertIn("warp-outbound", setup)
+        self.assertIn('"inboundTag": ["warp-reality"]', setup)
 
     def test_cdn_setup_runs_with_active_profile_before_host_changes(self):
         with tempfile.TemporaryDirectory() as tmp:

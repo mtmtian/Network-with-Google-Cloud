@@ -39,6 +39,9 @@ ensure_port() {
 # HY2/AnyTLS 端口：deploy.conf 已指定则沿用，否则随机高位端口（落入 .secrets.env）
 ensure_port HY2_PORT 30000 39999
 ensure_port ANYTLS_PORT 20000 29999
+if [ "${WARP_ENABLE:-false}" = "true" ]; then
+  ensure_port WARP_REALITY_PORT 40000 49999
+fi
 
 # Reality short-id 与 AnyTLS 共享密码
 ensure_secret REALITY_SHORTID "$(rand_short)"
@@ -48,6 +51,9 @@ ensure_secret ANYTLS_PASS     "$(rand_psk)"
 for d in ${DEVICES:-mac iphone}; do
   ensure_secret "REALITY_UUID_$d" "$(gen_uuid)"
   ensure_secret "HY2_PASS_$d"     "$(rand_psk)"
+  if [ "${WARP_ENABLE:-false}" = "true" ]; then
+    ensure_secret "WARP_REALITY_UUID_$d" "$(gen_uuid)"
+  fi
 done
 
 # ── Cloudflare CDN 套娃出口的密钥（仅 CDN_ENABLE=true 时）──

@@ -54,6 +54,11 @@ cdn_on = env.get("CDN_ENABLE", "false") == "true" and bool(CDN_HOSTNAME) and boo
 if CDN_ONLY and not cdn_on:
     sys.exit("ERROR: CDN_ONLY=true 但 CDN_ENABLE/CDN_HOSTNAME/CDN_WS_PATH 不完整")
 
+WARP_ENABLE = env.get("WARP_ENABLE", "false") == "true"
+WARP_REALITY_PORT = env.get("WARP_REALITY_PORT", "").strip()
+if WARP_ENABLE and CDN_ONLY:
+    sys.exit("ERROR: WARP_ENABLE=true 不能与 CDN_ONLY=true 同时使用（会重新暴露 VPS 入口）")
+
 required = ["DEVICES"]
 if not CDN_ONLY:
     required += [
@@ -64,6 +69,8 @@ if not CDN_ONLY:
     ]
 else:
     required += ["CDN_HOSTNAME", "CDN_WS_PATH"]
+if WARP_ENABLE:
+    required.append("WARP_REALITY_PORT")
 missing = [k for k in required if not env.get(k)]
 if missing:
     sys.exit(f"ERROR: 缺少必要变量 {missing}（应由部署入口自动生成，请检查 profile 状态）")
@@ -113,6 +120,28 @@ def cdn_proxy_block(dev_cdn_uuid):
         "      headers:\n"
         f"        Host: {CDN_HOSTNAME}\n"
     )
+
+
+def warp_reality_proxy_block(dev_warp_uuid):
+    """US-Reality-WARP: direct Reality ingress, WARP-only server egress."""
+    if not WARP_ENABLE:
+        return ""
+    return f'''  - name: "US-Reality-WARP"
+    type: vless
+    server: {env['STATIC_IP']}
+    port: {WARP_REALITY_PORT}
+    uuid: {dev_warp_uuid}
+    network: tcp
+    tls: true
+    udp: true
+    flow: xtls-rprx-vision
+    servername: "{env.get('REALITY_SNI', '')}"
+    sni: "{env.get('REALITY_SNI', '')}"
+    client-fingerprint: chrome
+    reality-opts:
+      public-key: {env['REALITY_PUBLIC']}
+      short-id: "{env['REALITY_SHORTID']}"
+'''
 
 
 def node_ref_block(names):
@@ -252,6 +281,7 @@ dns:
 
 proxies:
 {REALITY_PROXY}{HY2_PROXY}{ANYTLS_PROXY}
+{WARP_PROXY}
 {CDN_PROXY}
 proxy-groups:
   - name: "🚀 代理策略"
@@ -514,16 +544,22 @@ for dev in devices:
     dev_cdn_uuid = env.get(f"CDN_UUID_{dev}", "")
     if cdn_on and not dev_cdn_uuid:
         sys.exit(f"ERROR: CDN_ENABLE=true 但设备 {dev} 缺少 CDN_UUID_{dev}")
+    dev_warp_uuid = env.get(f"WARP_REALITY_UUID_{dev}", "")
+    if WARP_ENABLE and not dev_warp_uuid:
+        sys.exit(f"ERROR: WARP_ENABLE=true 但设备 {dev} 缺少 WARP_REALITY_UUID_{dev}")
 
     reality_proxy, hy2_proxy, anytls_proxy = direct_proxy_blocks(
         uuid or "", f"{dev}:{hy2pw}" if hy2pw else ""
     )
+    warp_proxy = warp_reality_proxy_block(dev_warp_uuid)
     direct_nodes = [] if CDN_ONLY else ["US-Reality", "US-HY2", "US-AnyTLS"]
+    warp_nodes = ["US-Reality-WARP"] if WARP_ENABLE else []
     fallback_nodes = direct_nodes[:1]
     if cdn_on:
         fallback_nodes.append("US-CDN")
     fallback_nodes.extend(direct_nodes[1:])
-    all_nodes = (["US-CDN"] if cdn_on else []) + direct_nodes
+    auto_nodes = fallback_nodes + warp_nodes
+    all_nodes = (["US-CDN"] if cdn_on else []) + direct_nodes + warp_nodes
     if not fallback_nodes:
         sys.exit("ERROR: 没有可用的代理节点")
 
@@ -538,10 +574,11 @@ for dev in devices:
         REALITY_PROXY=reality_proxy,
         HY2_PROXY=hy2_proxy,
         ANYTLS_PROXY=anytls_proxy,
+        WARP_PROXY=warp_proxy,
         CDN_PROXY=cdn_proxy_block(dev_cdn_uuid),
         CDN_REF=CDN_REF,
         FALLBACK_PROXIES=node_ref_block(fallback_nodes),
-        AUTO_PROXIES=node_ref_block(fallback_nodes),
+        AUTO_PROXIES=node_ref_block(auto_nodes),
         MANUAL_PROXIES=node_ref_block(all_nodes),
         ALL_PROXIES=node_ref_block(all_nodes),
         **env,

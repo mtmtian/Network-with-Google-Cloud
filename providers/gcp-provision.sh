@@ -48,6 +48,10 @@ ok "静态 IP：$STATIC_IP"
 
 say "[3/4] 防火墙规则（幂等）"
 FW_RULES="tcp:${REALITY_PORT},udp:${HY2_FIREWALL_PORT},tcp:${ANYTLS_PORT}"
+if [ "${WARP_ENABLE:-false}" = "true" ]; then
+  : "${WARP_REALITY_PORT:?WARP_ENABLE=true 但缺 WARP_REALITY_PORT}"
+  FW_RULES="${FW_RULES},tcp:${WARP_REALITY_PORT}"
+fi
 if gcloud_retry compute firewall-rules describe allow-proxy >/dev/null 2>&1; then
   gcloud_retry compute firewall-rules update allow-proxy \
     --rules "$FW_RULES"
