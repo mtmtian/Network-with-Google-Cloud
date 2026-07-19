@@ -256,6 +256,36 @@ PROVIDERS: List[Dict[str, Any]] = [
         "network": "CMIN2 / AS58807 for China Mobile; CUII / AS9929 for China Unicom; no CN2",
         "focus": True,
     },
+    {
+        "id": "lightlayer-lax-vp01-a-annual",
+        "provider": "LightLayer",
+        "region": "Los Angeles, US",
+        "kind": "manual",
+        "url": "https://account.lightlayer.net/index.php?/cart/1-core-1g-ram-annual/",
+        "plan_name": "LA-VP01-A",
+        "specs": "1 vCPU / 1GB RAM / 50GB NVMe / 20Mbps / unmetered / 1 native IPv4; no upgrade, no refund",
+        "target_price": 24.99,
+        "target_period": "year",
+        "verified_on": "2026-07-19",
+        "priority": "value",
+        "network": "Premium: CN2 for China Telecom; CMIN2 for China Unicom and China Mobile",
+        "focus": True,
+    },
+    {
+        "id": "lightlayer-lax-vp04-l-a-annual",
+        "provider": "LightLayer",
+        "region": "Los Angeles, US",
+        "kind": "manual",
+        "url": "https://account.lightlayer.net/index.php?/cart/lbannualcloud/",
+        "plan_name": "LA-VP04-L-A",
+        "specs": "1 vCPU / 1GB RAM / 50GB NVMe / 1Gbps / 1TB per month / 1 native IPv4; no upgrade, no refund",
+        "target_price": 49.99,
+        "target_period": "year",
+        "verified_on": "2026-07-19",
+        "priority": "value",
+        "network": "Premium: CN2 for China Telecom; CMIN2 for China Unicom and China Mobile",
+        "focus": True,
+    },
 ]
 
 
@@ -993,6 +1023,52 @@ def check_dedione_html(provider: Dict[str, Any], status_code: int, text: str) ->
     return result
 
 
+def check_manual(provider: Dict[str, Any]) -> Dict[str, Any]:
+    """Report a hand-verified snapshot for a catalog the monitor cannot read.
+
+    LightLayer keeps its whole product catalog behind an account login, so the
+    monitor never fetches it.  It reports the specs and price confirmed by hand
+    and turns ``unknown`` once that snapshot is stale enough to need a re-check.
+    """
+    result = _base_result(provider)
+    verified_on = provider["verified_on"]
+    age_days = (date.today() - date.fromisoformat(verified_on)).days
+    stale_after = int(provider.get("stale_after_days", 30))
+    amount = float(provider["target_price"])
+    period = provider["target_period"]
+    billing_months = {"month": 1, "quarter": 3, "year": 12}[period]
+    monthly_equivalent = round(amount / billing_months, 2)
+    result["plans"] = [
+        {
+            "plan": provider["plan_name"],
+            "specs": provider["specs"],
+            "price": {
+                "amount": amount,
+                "currency": "USD",
+                "period": period,
+                "monthly_equivalent": monthly_equivalent,
+                "price_eligible": amount <= 80 if period == "year" else monthly_equivalent <= 12,
+            },
+            "available": None,
+        }
+    ]
+    result["verified_on"] = verified_on
+    result["age_days"] = age_days
+    if age_days > stale_after:
+        result["status"] = "unknown"
+        result["reason"] = (
+            "hand-verified snapshot is %d days old (limit %d); re-check %s"
+            % (age_days, stale_after, provider["url"])
+        )
+        return result
+    result["status"] = "manual"
+    result["reason"] = (
+        "catalog requires an account login; specs and price hand-verified %d days ago on %s"
+        % (age_days, verified_on)
+    )
+    return result
+
+
 def _html_text(value: str) -> str:
     return " ".join(unescape(re.sub(r"<[^>]+>", " ", value)).split())
 
@@ -1500,6 +1576,8 @@ def check_provider(provider: Dict[str, Any], timeout: int = 20) -> Dict[str, Any
         return check_twitter_discovery(provider, timeout)
     if provider["kind"] == "reddit_discovery":
         return check_reddit_discovery(provider, timeout)
+    if provider["kind"] == "manual":
+        return check_manual(provider)
     try:
         status_code, text = fetch(provider.get("fetch_url", provider["url"]), timeout=timeout)
     except RuntimeError as exc:
@@ -1590,6 +1668,9 @@ def monitorability(cn2_only: bool = False, all_providers: bool = False) -> List[
         elif kind == "dedione_html":
             level = "order_signal"
             reason = "official DediOne product card exposes the target price and order action, but not a numeric inventory count"
+        elif kind == "manual":
+            level = "manual_only"
+            reason = "official catalog requires an account login; specs and price are hand-verified, never fetched"
         elif provider.get("stock_signal") == "catalog":
             level = "catalog_only"
             reason = "public catalog is reachable, but checkout inventory is not exposed"

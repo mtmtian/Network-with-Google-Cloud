@@ -24,6 +24,7 @@ from vps_stock import (  # noqa: E402
     check_dedione_html,
     check_frantech_html,
     check_html,
+    check_manual,
     check_novixlink_markdown,
     check_reddit,
     check_twitter_discovery,
@@ -401,6 +402,50 @@ Out of Stock
         result = check_dedione_html(provider, 200, html)
         self.assertEqual(result["status"], "out_of_stock")
         self.assertFalse(result["plans"][0]["available"])
+
+    def _manual_provider(self, verified_on: str) -> dict:
+        return {
+            "id": "lightlayer-lax-vp01-a-annual",
+            "provider": "LightLayer",
+            "region": "Los Angeles, US",
+            "kind": "manual",
+            "url": "https://account.lightlayer.net/index.php?/cart/1-core-1g-ram-annual/",
+            "plan_name": "LA-VP01-A",
+            "specs": "1 vCPU / 1GB RAM / 50GB NVMe / 20Mbps / unmetered / 1 native IPv4",
+            "target_price": 24.99,
+            "target_period": "year",
+            "verified_on": verified_on,
+            "priority": "value",
+            "network": "Premium: CN2 for China Telecom; CMIN2 for China Unicom and China Mobile",
+        }
+
+    def test_manual_source_reports_hand_verified_snapshot(self):
+        provider = self._manual_provider((date.today() - timedelta(days=3)).isoformat())
+        result = check_manual(provider)
+        self.assertEqual(result["status"], "manual")
+        self.assertEqual(result["confidence"], "none")
+        self.assertEqual(result["age_days"], 3)
+        self.assertEqual(result["plans"][0]["price"]["amount"], 24.99)
+        self.assertEqual(result["plans"][0]["price"]["monthly_equivalent"], 2.08)
+        self.assertIsNone(result["plans"][0]["available"])
+
+    def test_manual_source_turns_unknown_once_the_snapshot_is_stale(self):
+        provider = self._manual_provider((date.today() - timedelta(days=31)).isoformat())
+        result = check_manual(provider)
+        self.assertEqual(result["status"], "unknown")
+        self.assertIn("re-check", result["reason"])
+
+    def test_manual_status_never_fires_an_availability_transition(self):
+        provider = self._manual_provider(date.today().isoformat())
+        result = check_manual(provider)
+        self.assertEqual(find_transitions([result], {}), [])
+
+    def test_lightlayer_manual_sources_are_registered_below_dedione(self):
+        sources = {item["id"]: item for item in select_providers()}
+        for source_id in ("lightlayer-lax-vp01-a-annual", "lightlayer-lax-vp04-l-a-annual"):
+            self.assertEqual(sources[source_id]["kind"], "manual")
+            self.assertEqual(sources[source_id]["priority"], "value")
+        self.assertEqual(sources["dedione-lax-cmin2-1c1g10g-annual"]["priority"], "cn2")
 
     def test_novixlink_sources_are_separate_cn2_stock_sources(self):
         sources = {item["id"]: item for item in select_providers()}
