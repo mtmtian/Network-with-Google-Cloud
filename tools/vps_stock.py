@@ -382,6 +382,10 @@ _NOVIXLINK_USD_PRICE = re.compile(r"~\s*\$\s*(?P<amount>\d+(?:\.\d+)?)\s*USD\b",
 
 _TWITTER_POSITIVE = ("coupon", "sale", "discount", "promo", "restock", "in stock", "available", "优惠", "折扣", "优惠码", "补货", "有货", "上架", "开售")
 _TWITTER_NEGATIVE = ("out of stock", "sold out", "unavailable", "无货", "缺货", "断货", "售罄", "抢空")
+_SOCIAL_AD_TERMS = (
+    "affiliate", "referral", "invite code", "invite link", "coupon code", "promo code", "discount code",
+    "邀请码", "优惠码", "推广", "推广链接", "传送门", "购买链接", "充值", "返利", "返现", "交流群",
+)
 SOCIAL_LOOKBACK_DAYS = 3
 
 _DISCOVERY_SIGNAL_TERMS = _TWITTER_POSITIVE + ("deal", "offer", "低价", "特价")
@@ -389,7 +393,10 @@ _DISCOVERY_NOISE_TERMS = (
     "referral", "affiliate", "invite code", "invite link", "邀请码", "返利", "推广链接",
     "传送门", "闭眼冲", "购买链接", "推广",
 )
-_DISCOVERY_OFF_TOPIC_TERMS = ("forex", "copy trading", "serverless", "lambda", "cloud functions")
+_DISCOVERY_OFF_TOPIC_TERMS = (
+    "forex", "copy trading", "serverless", "lambda", "cloud functions", "crypto", "blockchain",
+    "robinhood chain", "tokenized stocks", "email scraper", "lead generation", "cold outreach",
+)
 _DISCOVERY_KNOWN_PROVIDER_TERMS = (
     "dmit", "bandwagonhost", "搬瓦工", "racknerd", "cloudcone", "buyvm", "greencloud", "hostdare", "zgovps",
 )
@@ -570,6 +577,8 @@ def filter_discovery_posts(
             continue
         if any(term in normalized for term in _DISCOVERY_OFF_TOPIC_TERMS):
             continue
+        if any(term in normalized for term in _SOCIAL_AD_TERMS):
+            continue
         if any(term in normalized for term in _DISCOVERY_KNOWN_PROVIDER_TERMS):
             continue
         if any(term in normalized for term in _TWITTER_NEGATIVE):
@@ -579,9 +588,13 @@ def filter_discovery_posts(
         routes = _discovery_matches(text, _DISCOVERY_ROUTE_TERMS)
         locations = _discovery_matches(text, _DISCOVERY_LOCATION_TERMS)
         resources = sorted(set(match.group(0) for match in _DISCOVERY_RESOURCE.finditer(text)), key=str.lower)
+        title = str(post.get("title", "")) or text[:160]
+        provider = _discovery_provider_guess(title)
         noise = [term for term in _DISCOVERY_NOISE_TERMS if term in normalized]
         concrete = bool(prices or routes or locations or resources)
         if not concrete or (prices and not any(price["price_eligible"] for price in prices)):
+            continue
+        if provider == "未识别供应商" and not (routes or locations or resources):
             continue
         if noise and not prices:
             continue
@@ -590,7 +603,6 @@ def filter_discovery_posts(
         if score < 3:
             continue
         seen.add(post_id)
-        title = str(post.get("title", "")) or text[:160]
         author = post.get("author", "")
         if isinstance(author, dict):
             author = author.get("screenName", "")
@@ -600,7 +612,7 @@ def filter_discovery_posts(
             {
                 "id": "%s:%s" % (source, post_id),
                 "label": "待官网复核线索",
-                "provider": _discovery_provider_guess(title),
+                "provider": provider,
                 "author": str(author),
                 "created_at": post.get("createdAtISO", int(created_at)),
                 "title": title[:300],
@@ -1115,6 +1127,8 @@ def check_twitter(provider: Dict[str, Any], timeout: int = 20, since: Optional[s
             continue
         if any(term in normalized for term in _TWITTER_NEGATIVE):
             continue
+        if any(term in normalized for term in _SOCIAL_AD_TERMS):
+            continue
         author = tweet.get("author", {})
         screen_name = str(author.get("screenName", ""))
         tweet_id = str(tweet.get("id", ""))
@@ -1324,6 +1338,8 @@ def check_reddit(provider: Dict[str, Any], timeout: int = 20) -> Dict[str, Any]:
         if not any(term in normalized for term in _TWITTER_POSITIVE):
             continue
         if any(term in normalized for term in _TWITTER_NEGATIVE):
+            continue
+        if any(term in normalized for term in _SOCIAL_AD_TERMS):
             continue
         post_id = str(post.get("id", ""))
         url = str(post.get("url", ""))

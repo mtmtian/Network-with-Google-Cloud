@@ -521,6 +521,12 @@ Out of Stock
                         "author": {"screenName": "vps_watcher"},
                         "createdAtISO": "2026-07-12T00:00:00+00:00",
                     },
+                    {
+                        "id": "789",
+                        "text": "DMIT 补货了，使用我的优惠码购买。",
+                        "author": {"screenName": "promoter"},
+                        "createdAtISO": "2026-07-12T00:00:00+00:00",
+                    },
                 ]
             }
         )
@@ -986,6 +992,30 @@ Out of Stock
                 "author": "engineer",
                 "created_utc": now - 60 * 60,
                 "url": "https://www.reddit.com/r/example/comments/serverless",
+            },
+            {
+                "id": "crypto-ad",
+                "title": "VPS sale: build on the Robinhood Chain",
+                "selftext": "Crypto infrastructure is available now for $1.2/mo with a limited sale.",
+                "author": "crypto_marketer",
+                "created_utc": now - 60 * 60,
+                "url": "https://www.reddit.com/r/example/comments/crypto-ad",
+            },
+            {
+                "id": "coupon-ad",
+                "title": "CSTserver CN2 VPS restock",
+                "selftext": "Los Angeles CN2, 16GB RAM, $9/mo, use coupon code CSTOU4.",
+                "author": "vps_promoter",
+                "created_utc": now - 60 * 60,
+                "url": "https://www.reddit.com/r/example/comments/coupon-ad",
+            },
+            {
+                "id": "generic-available",
+                "title": "My AI coding setup is available for $1/mo",
+                "selftext": "I use a VPS for development, but there is no provider, location, route, or configuration here.",
+                "author": "developer",
+                "created_utc": now - 60 * 60,
+                "url": "https://www.reddit.com/r/example/comments/generic-available",
             },
         ]
 

@@ -16,3 +16,6 @@ __pycache__/
 .venv/
 .idea/
 .vscode/
+
+# Local Graphify analysis cache (may contain absolute paths and derived metadata)
+graphify-out/
